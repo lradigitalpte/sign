@@ -1,0 +1,33 @@
+# Go
+/bin/
+/coverage.out
+/tmp/
+/var/email-previews/
+*.test
+*.exe
+
+# JavaScript and Next.js
+node_modules/
+.next/
+out/
+.cache/
+*.tsbuildinfo
+*.log
+
+# Local configuration
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Project documentation
+docs/
+**/docs/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

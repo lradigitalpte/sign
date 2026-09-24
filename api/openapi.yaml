@@ -1,0 +1,303 @@
+openapi: 3.1.0
+info:
+  title: Signing Platform API
+  version: 0.1.0
+  description: REST API for the original signing platform.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      operationId: getLiveness
+      summary: Check API process liveness
+      responses:
+        "200":
+          description: API process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+  /readyz:
+    get:
+      operationId: getReadiness
+      summary: Check API database readiness
+      responses:
+        "200":
+          description: API and database are ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "503":
+          description: A required dependency is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+  /v1/:
+    get:
+      operationId: getAPIIdentity
+      summary: Return API identity and version
+      responses:
+        "200":
+          description: API identity
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, version]
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+  /v1/me:
+    get:
+      operationId: getCurrentUser
+      summary: Synchronize and return the authenticated application user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authenticated local user and active WorkOS organization context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          description: Missing or invalid WorkOS access token
+        "502":
+          description: The WorkOS user directory could not be reached
+  /v1/envelopes:
+    get:
+      operationId: listEnvelopes
+      summary: List envelopes in the active workspace
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, in_progress, completed, voided, expired]
+      responses:
+        "200": { description: Workspace envelopes }
+        "401": { description: Missing or invalid access token }
+    post:
+      operationId: createEnvelope
+      summary: Create a draft envelope in the active workspace
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                language: { type: string, default: en }
+                timezone: { type: string, default: Etc/UTC }
+                dateFormat: { type: string, default: YYYY-MM-DD }
+                expiresAt: { type: string, format: date-time }
+      responses:
+        "201": { description: Draft envelope created }
+        "400": { description: Invalid request }
+        "401": { description: Missing or invalid access token }
+  /v1/envelopes/{envelopeId}:
+    get:
+      operationId: getEnvelope
+      summary: Get an envelope from the active workspace
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: envelopeId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Envelope }
+        "401": { description: Missing or invalid access token }
+        "404": { description: Envelope does not exist in this workspace }
+  /v1/envelopes/{envelopeId}/documents:
+    get:
+      operationId: listEnvelopeDocuments
+      summary: List documents in a workspace envelope
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: envelopeId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Envelope documents }
+        "401": { description: Missing or invalid access token }
+    post:
+      operationId: uploadEnvelopeDocument
+      summary: Upload a PDF to a draft envelope
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: envelopeId, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201": { description: PDF uploaded and hashed }
+        "400": { description: Invalid or oversized upload }
+        "401": { description: Missing or invalid access token }
+        "404": { description: Draft envelope not found }
+        "415": { description: File is not a PDF }
+  /v1/envelopes/{envelopeId}/documents/{documentId}/download:
+    get:
+      operationId: downloadEnvelopeDocument
+      summary: Stream a private envelope PDF
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: envelopeId, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: documentId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: PDF stream }
+        "401": { description: Missing or invalid access token }
+        "404": { description: Document not found in this workspace }
+  /v1/envelopes/{envelopeId}/recipients:
+    get:
+      operationId: listEnvelopeRecipients
+      summary: List recipients in an envelope
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Ordered recipients }
+    post:
+      operationId: createEnvelopeRecipient
+      summary: Add a recipient to a draft envelope
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: Recipient created }
+        "400": { description: Invalid recipient }
+        "404": { description: Draft envelope not found }
+  /v1/envelopes/{envelopeId}/recipients/{recipientId}:
+    patch:
+      operationId: updateEnvelopeRecipient
+      summary: Edit or reorder a draft recipient
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Recipient updated }
+        "404": { description: Draft recipient not found }
+    delete:
+      operationId: deleteEnvelopeRecipient
+      summary: Remove a recipient from a draft envelope
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Recipient removed }
+        "404": { description: Draft recipient not found }
+  /v1/envelopes/{envelopeId}/fields:
+    get:
+      operationId: listEnvelopeFields
+      summary: List placed fields in an envelope
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Ordered document fields }
+    post:
+      operationId: createEnvelopeField
+      summary: Place a field on a draft document
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: Field placed }
+        "400": { description: Invalid field or page coordinates }
+        "404": { description: Editable document or recipient not found }
+  /v1/envelopes/{envelopeId}/fields/{fieldId}:
+    patch:
+      operationId: updateEnvelopeField
+      summary: Move, resize, or reassign a placed field
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Field updated }
+        "400": { description: Invalid placement }
+        "404": { description: Editable field not found }
+    delete:
+      operationId: deleteEnvelopeField
+      summary: Remove a placed field
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Field removed }
+        "404": { description: Editable field not found }
+  /v1/envelopes/{envelopeId}/review:
+    get:
+      operationId: reviewEnvelope
+      summary: Return draft readiness, validation, and review summary
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: envelopeId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Envelope review summary }
+        "401": { description: Missing or invalid access token }
+        "404": { description: Envelope does not exist in this workspace }
+  /v1/envelopes/{envelopeId}/send:
+    post:
+      operationId: sendEnvelope
+      summary: Lock a ready draft, queue invitations, and start signing
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: envelopeId, required: true, schema: { type: string, format: uuid } }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Envelope sent or idempotent replay }
+        "400": { description: Missing Idempotency-Key header }
+        "401": { description: Missing or invalid access token }
+        "404": { description: Draft envelope not found }
+        "409": { description: Envelope is not ready or has already been sent }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+    CurrentUser:
+      type: object
+      required: [user]
+      properties:
+        user:
+          type: object
+          required: [id, email, name, provider]
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            name:
+              type: string
+            emailVerifiedAt:
+              type: string
+              format: date-time
+            provider:
+              type: string
+              example: workos
+        workspace:
+          type: object
+          required: [id, name, slug, role]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            slug:
+              type: string
+            role:
+              type: string
+        permissions:
+          type: array
+          items:
+            type: string

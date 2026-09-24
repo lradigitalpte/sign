@@ -1,0 +1,11 @@
+{
+  "name": "signing-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "lint:web": "npm --prefix apps/web run lint",
+    "start:web": "npm --prefix apps/web run start"
+  }
+}
