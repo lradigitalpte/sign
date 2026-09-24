@@ -36,7 +36,7 @@ INSERT INTO teams (organization_id, name, slug, created_by)
 SELECT o.id, 'Personal Team', 'personal-team', m.user_id
 FROM organizations o
 JOIN LATERAL (
-  SELECT user_id FROM memberships WHERE organization_id = o.id ORDER BY created_at ASC LIMIT 1
+  SELECT user_id FROM organization_memberships WHERE organization_id = o.id ORDER BY created_at ASC LIMIT 1
 ) m ON true
 ON CONFLICT (organization_id, slug) DO NOTHING;
 
