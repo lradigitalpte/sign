@@ -42,6 +42,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 
 	sendErr := p.deliver(ctx, job)
 	if sendErr == nil {
+		p.logger.Info("notification sent", "jobId", job.ID, "envelopeId", job.EnvelopeID, "kind", job.Kind)
 		return true, nil
 	}
 	retryAt := time.Now().UTC().Add(Backoff(job.Attempts))
@@ -51,7 +52,7 @@ func (p *Processor) ProcessOne(ctx context.Context) (bool, error) {
 	if err := p.store.MarkFailed(ctx, job, sendErr, retryAt); err != nil {
 		return true, err
 	}
-	p.logger.Error("notification delivery failed", "jobId", job.ID, "envelopeId", job.EnvelopeID, "recipientId", job.RecipientID, "kind", job.Kind, "attempt", job.Attempts)
+	p.logger.Error("notification delivery failed", "jobId", job.ID, "envelopeId", job.EnvelopeID, "recipientId", job.RecipientID, "kind", job.Kind, "attempt", job.Attempts, "error", sendErr)
 	return true, nil
 }
 

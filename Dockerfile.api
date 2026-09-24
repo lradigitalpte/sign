@@ -10,5 +10,6 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/api /api
 COPY --from=build /out/migrate /migrate
 COPY db/migrations /db/migrations
+WORKDIR /
 EXPOSE 8080
 ENTRYPOINT ["/api"]

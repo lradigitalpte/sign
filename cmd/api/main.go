@@ -12,6 +12,7 @@ import (
 	"signing-platform/internal/config"
 	"signing-platform/internal/database"
 	"signing-platform/internal/document"
+	"signing-platform/internal/email"
 	"signing-platform/internal/envelope"
 	"signing-platform/internal/field"
 	"signing-platform/internal/finalize"
@@ -20,6 +21,7 @@ import (
 	"signing-platform/internal/identity"
 	"signing-platform/internal/inbox"
 	"signing-platform/internal/members"
+	"signing-platform/internal/notify"
 	"signing-platform/internal/recipient"
 	"signing-platform/internal/securetoken"
 	"signing-platform/internal/send"
@@ -99,6 +101,28 @@ func main() {
 		WithCompleter(sender)
 	inboxService := inbox.NewService(inbox.NewPostgresStore(db))
 	membersService := members.NewService(db)
+
+	// Deployments without a separate worker service can drain the email queue from the API process.
+	// Jobs are claimed with SKIP LOCKED, so this is safe alongside cmd/worker.
+	if cfg.EmbeddedWorker {
+		var mailer email.Mailer
+		switch {
+		case cfg.ResendAPIKey != "":
+			mailer = email.NewResend(cfg.ResendAPIKey, cfg.ResendFrom)
+		case cfg.SMTPHost != "":
+			mailer = email.NewSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
+		default:
+			logger.Error("EMBEDDED_WORKER requires RESEND_API_KEY or SMTP_HOST")
+			os.Exit(1)
+		}
+		processor := notify.NewProcessor(notify.NewPostgresStore(db), mailer, protector, cfg.SigningOrigin, logger)
+		go func() {
+			logger.Info("embedded email worker started")
+			if err := processor.Run(ctx, 0); err != nil {
+				logger.Error("embedded email worker stopped", "error", err)
+			}
+		}()
+	}
 
 	server := httpapi.New(cfg, db, logger, verifier, users, envelopes, duplicator, documents, recipients, attachments, fields, folders, sender, signer, inboxService, membersService, signaturePreferences, objectResolver, objectResolver, protector)
 

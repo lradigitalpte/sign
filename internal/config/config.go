@@ -33,7 +33,8 @@ type Config struct {
 	ResendFrom          string
 	EmailPreviewAddress string
 	EmailPreviewDir     string
-	ShutdownTimeout     time.Duration
+	EmbeddedWorker      bool
+	ShutdownTimeout    time.Duration
 	ReadTimeout         time.Duration
 	WriteTimeout        time.Duration
 	IdleTimeout         time.Duration
@@ -98,6 +99,7 @@ func Load() (Config, error) {
 		cfg.StorageBucket = "signing-documents"
 	}
 	cfg.StorageUseSSL = os.Getenv("STORAGE_USE_SSL") == "true"
+	cfg.EmbeddedWorker = os.Getenv("EMBEDDED_WORKER") == "true"
 	if cfg.SMTPFrom == "" {
 		cfg.SMTPFrom = "Signing Platform <noreply@localhost>"
 	}

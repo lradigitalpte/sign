@@ -28,9 +28,10 @@ interface ShaderProps {
 
 interface SignInPageProps {
   className?: string;
+  initialTab?: "signin" | "signup";
 }
 
-/* â”€â”€ CanvasRevealEffect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/*â”€â”€ CanvasRevealEffect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export const CanvasRevealEffect = ({
   animationSpeed = 10,
   opacities = [0.3, 0.3, 0.3, 0.5, 0.5, 0.5, 0.8, 0.8, 0.8, 1],
@@ -529,7 +530,7 @@ const OtpInput = ({ code, refs, onChange, onKeyDown }: OtpInputProps) => (
             />
             {!digit && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <span className="text-xl text-white/20">â€¢</span>
+                <span className="text-xl text-white/20">•</span>
               </div>
             )}
           </div>
@@ -591,9 +592,9 @@ const TabSwitcher = ({ active, onChange }: TabSwitcherProps) => (
 );
 
 /* â”€â”€ SignInPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-export const SignInPage = ({ className }: SignInPageProps) => {
+export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps) => {
   /* â”€â”€ Tab state â”€â”€ */
-  const [activeTab, setActiveTab] = useState<"signin" | "signup">("signin");
+  const [activeTab, setActiveTab] = useState<"signin" | "signup">(initialTab);
 
   /* â”€â”€ Shared step state (used by both flows) â”€â”€ */
   const [email, setEmail] = useState("");
@@ -677,8 +678,8 @@ export const SignInPage = ({ className }: SignInPageProps) => {
       className="group absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
     >
       <span className="relative block h-full w-full overflow-hidden">
-        <span className="absolute inset-0 flex items-center justify-center transition-transform duration-300 group-hover:translate-x-full">â†’</span>
-        <span className="absolute inset-0 flex -translate-x-full items-center justify-center transition-transform duration-300 group-hover:translate-x-0">â†’</span>
+        <span className="absolute inset-0 flex items-center justify-center transition-transform duration-300 group-hover:translate-x-full">→</span>
+        <span className="absolute inset-0 flex -translate-x-full items-center justify-center transition-transform duration-300 group-hover:translate-x-0">→</span>
       </span>
     </button>
   );
@@ -930,7 +931,7 @@ export const SignInPage = ({ className }: SignInPageProps) => {
                       </h1>
                       <p className="text-[1.25rem] font-light text-white/50">
                         {activeTab === "signup"
-                          ? `Welcome, ${name || "there"} ðŸ‘‹`
+                          ? `Welcome, ${name || "there"} 👋`
                           : "Welcome back to YourSign"}
                       </p>
                     </div>
