@@ -1,6 +1,7 @@
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import { NextRequest } from "next/server";
 
+import { workspaceHeadersFromCookie } from "@/lib/active-workspace";
 import { platformApiUrl } from "@/lib/platform-api";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; documentId: string }> }) {
@@ -8,7 +9,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id, documentId } = await params;
   const version = request.nextUrl.searchParams.get("version") === "completed" ? "?version=completed" : "";
   const upstream = await fetch(`${platformApiUrl}/v1/envelopes/${id}/documents/${documentId}/download${version}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${accessToken}`, ...workspaceHeadersFromCookie(request.cookies) },
     cache: "no-store",
   });
 

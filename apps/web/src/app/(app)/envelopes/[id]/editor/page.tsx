@@ -93,6 +93,7 @@ import {
   type EnvelopeField,
   type EnvelopeRecipient,
 } from "@/lib/platform-api";
+import { workspaceHeaders } from "@/lib/active-workspace";
 import { isSoloSelfSign, openWorkspaceSigningSession } from "@/lib/self-sign-flow";
 import { cn } from "@/lib/utils";
 
@@ -744,7 +745,7 @@ export default function FieldEditorPage({ params }: { params: Promise<{ id: stri
     try {
       const token = await requireToken();
       const res = await fetch(`${platformApiUrl}/v1/envelopes/${id}/documents/${selectedDocument.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...workspaceHeaders() },
       });
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();

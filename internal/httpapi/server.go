@@ -38,7 +38,7 @@ func New(cfg config.Config, db *pgxpool.Pool, logger *slog.Logger, verifier plat
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{cfg.WebOrigin},
 		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "Idempotency-Key", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "Idempotency-Key", "X-CSRF-Token", identity.WorkspaceHeader},
 		ExposedHeaders:   []string{"Content-Disposition", "X-PDF-Security-File-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -56,10 +56,14 @@ func New(cfg config.Config, db *pgxpool.Pool, logger *slog.Logger, verifier plat
 		})
 
 		r.Route("/sign/{token}", signingRoutes(signer))
+		r.Get("/invitations/{token}", invitationPreviewHandler(membersService))
 
 		r.Group(func(r chi.Router) {
 			r.Use(platformauth.Middleware(verifier))
 			r.Use(identity.Middleware(users))
+			r.Use(readOnlyForViewers)
+			r.Post("/invitations/{token}/accept", acceptInvitationHandler(membersService))
+			r.Route("/workspaces", workspaceRoutes(users, membersService))
 			r.Get("/me", func(w http.ResponseWriter, request *http.Request) {
 				current, _ := identity.SessionFromContext(request.Context())
 				session, _ := platformauth.IdentityFromContext(request.Context())

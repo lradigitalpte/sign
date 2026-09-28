@@ -35,6 +35,7 @@ import {
   uploadEnvelopeAttachmentFile,
   type EnvelopeAttachment,
 } from "@/lib/platform-api";
+import { workspaceHeaders } from "@/lib/active-workspace";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -123,7 +124,7 @@ export function AttachmentsDialog({ envelopeId, open, onOpenChange }: Props) {
       if (!token) return;
 
       const res = await fetch(`${platformApiUrl}/v1/envelopes/${envelopeId}/attachments/${att.id}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...workspaceHeaders() },
       });
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();

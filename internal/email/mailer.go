@@ -182,3 +182,35 @@ func Completion(to, name, title, url string, branding Branding) Message {
 		HTML:    emailShell(branding, bodyHTML),
 	}
 }
+
+var workspaceRoleDescriptions = map[string]string{
+	"admin":  "As an admin you can send documents, invite people and manage workspace settings.",
+	"member": "As a member you can create, send and manage documents in the workspace.",
+	"viewer": "As a viewer you have read-only access to the workspace's documents and audit trails.",
+}
+
+// OrganizationInvite asks someone to join an organization workspace with the given role.
+func OrganizationInvite(to, organizationName, inviterName, role, url string, expires time.Time) Message {
+	org := strings.TrimSpace(organizationName)
+	if org == "" {
+		org = "an organization"
+	}
+	inviter := strings.TrimSpace(inviterName)
+	if inviter == "" {
+		inviter = "A colleague"
+	}
+	roleLine := workspaceRoleDescriptions[role]
+	expiry := expires.UTC().Format(time.RFC1123)
+	text := fmt.Sprintf("Hi,\n\n%s invited you to join %s on Secure Sign as a %s.\n%s\n\nAccept the invitation:\n%s\n\nIf you already have an account, sign in with %s to accept. This link expires on %s.\n", inviter, org, role, roleLine, url, to, expiry)
+	bodyHTML := fmt.Sprintf(
+		`<p style="margin:0 0 12px;font-size:15px;color:#111827;">Hi,</p><p style="margin:0 0 12px;font-size:15px;color:#374151;"><strong>%s</strong> invited you to join <strong>%s</strong> as a <strong>%s</strong>.</p><p style="margin:0 0 16px;font-size:14px;color:#6b7280;">%s</p>%s<p style="margin:16px 0 0;font-size:12px;color:#9ca3af;">If you already have an account, sign in with %s to accept. This link expires on %s.</p>`,
+		html.EscapeString(inviter), html.EscapeString(org), html.EscapeString(role), html.EscapeString(roleLine),
+		emailButton("Accept invitation", url, Branding{}.accentColor()), html.EscapeString(to), html.EscapeString(expiry),
+	)
+	return Message{
+		To:      to,
+		Subject: fmt.Sprintf("%s invited you to join %s", inviter, org),
+		Text:    text,
+		HTML:    emailShell(Branding{}, bodyHTML),
+	}
+}

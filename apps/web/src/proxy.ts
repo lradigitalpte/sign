@@ -3,7 +3,8 @@ import { authkitProxy } from "@workos-inc/authkit-nextjs";
 export default authkitProxy({
   middlewareAuth: {
     enabled: true,
-    unauthenticatedPaths: [],
+    // Invitation links must open for people who haven't signed in yet.
+    unauthenticatedPaths: ["/invitations/:path*"],
   },
   signUpPaths: ["/auth/sign-up"],
 });
@@ -22,5 +23,6 @@ export const config = {
     "/teams/:path*",
     "/organizations/:path*",
     "/settings/:path*",
+    "/invitations/:path*",
   ],
 };

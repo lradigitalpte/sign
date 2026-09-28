@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Building2, ChevronDown, CircleHelp, FileKey2, FilePenLine, FileSignature, FileText, Inbox, LayoutDashboard, Library, LogOut, Menu, PenTool, Plus, Search, Settings, UserRound, Users } from "lucide-react";
+import { ArrowLeft, Building2, ChevronDown, CircleHelp, Eye, FileKey2, FilePenLine, FileSignature, FileText, Inbox, LayoutDashboard, Library, LogOut, Menu, PenTool, Plus, Search, Settings, UserRound, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -143,6 +143,7 @@ function WorkspaceLayout({ children, activeItem = "overview" }: WorkspaceLayoutP
           <WorkspaceSearch />
           <HeaderActions companyName={companyName} userName={meQuery.data?.user.name ?? ""} userEmail={meQuery.data?.user.email ?? ""} />
         </header>
+        {meQuery.data?.workspace.role === "viewer" ? <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200 sm:px-5"><Eye className="size-3.5 shrink-0" /><span>You have <strong>view-only</strong> access to {companyName}. You can review documents and audit trails, but not create, send, or change anything.</span></div> : null}
         <div className={cn("min-h-0 flex-1 bg-surface-subtle", pathname.startsWith("/inbox/sign") || pathname.startsWith("/encrypt") ? "overflow-hidden" : "overflow-y-auto")}>{children}</div>
       </section>
     </div>

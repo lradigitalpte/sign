@@ -1,13 +1,14 @@
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import { NextRequest } from "next/server";
 
+import { workspaceHeadersFromCookie } from "@/lib/active-workspace";
 import { platformApiUrl } from "@/lib/platform-api";
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string; attachmentId: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; attachmentId: string }> }) {
   const { accessToken } = await withAuth({ ensureSignedIn: true });
   const { id, attachmentId } = await params;
   const upstream = await fetch(`${platformApiUrl}/v1/envelopes/${id}/attachments/${attachmentId}/download`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${accessToken}`, ...workspaceHeadersFromCookie(request.cookies) },
     cache: "no-store",
   });
   if (!upstream.ok) {

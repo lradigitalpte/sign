@@ -38,7 +38,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { initialsFor } from "@/lib/platform-api";
+import { useMe, usePlatformToken, useWorkspaces } from "@/hooks/use-envelope-api";
+import { switchWorkspace } from "@/lib/active-workspace";
+import { ApiError, createWorkspace, initialsFor } from "@/lib/platform-api";
 
 type OrgMenuSwitcherProps = {
   companyName: string;
@@ -52,37 +54,43 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
   const pathname = usePathname();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [activeOrg, setActiveOrg] = useState(companyName || "Personal Organisation");
   const [activeTeam, setActiveTeam] = useState("Personal Team");
+  const { getAccessToken } = usePlatformToken();
+  const activeWorkspaceId = useMe().data?.workspace.id;
+  const workspaces = useWorkspaces().data ?? [];
 
   // Create Org Modal
   const [isCreateOrgOpen, setIsCreateOrgOpen] = useState(false);
   const [newOrgName, setNewOrgName] = useState("");
+  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
+  const [createOrgError, setCreateOrgError] = useState<string | null>(null);
 
   // Create Team Modal
   const [isCreateTeamOpen, setIsCreateTeamOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
 
-  // List of orgs & teams (supports personal + newly created)
-  const [orgList, setOrgList] = useState<string[]>([
-    companyName || "Personal Organisation",
-  ]);
   const [teamList, setTeamList] = useState<string[]>([
     "Personal Team",
   ]);
 
   const initials = initialsFor(userName || userEmail || "?");
 
-  const handleCreateOrg = (e: React.FormEvent) => {
+  const handleCreateOrg = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = newOrgName.trim();
     if (!trimmed) return;
-    if (!orgList.includes(trimmed)) {
-      setOrgList((prev) => [...prev, trimmed]);
+    setIsCreatingOrg(true);
+    setCreateOrgError(null);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Not authenticated");
+      const created = await createWorkspace(token, trimmed);
+      // Land on Members so the new owner can invite people straight away.
+      switchWorkspace(created.id, "/members");
+    } catch (err) {
+      setCreateOrgError(err instanceof ApiError ? err.message : "Failed to create organisation.");
+      setIsCreatingOrg(false);
     }
-    setActiveOrg(trimmed);
-    setNewOrgName("");
-    setIsCreateOrgOpen(false);
   };
 
   const handleCreateTeam = (e: React.FormEvent) => {
@@ -111,7 +119,7 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
               </AvatarFallback>
             </Avatar>
             <span className="hidden sm:inline-block max-w-[110px] truncate text-left font-medium">
-              {activeOrg}
+              {companyName}
             </span>
             <ChevronsUpDown className="size-3.5 text-muted-foreground shrink-0" />
           </button>
@@ -131,14 +139,14 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
                 <span>Organisations</span>
               </div>
               <div className="flex-1 space-y-1 py-1 max-h-48 overflow-y-auto">
-                {orgList.map((org) => {
-                  const isSelected = activeOrg === org;
+                {workspaces.map((workspace) => {
+                  const isSelected = activeWorkspaceId === workspace.id;
                   return (
                     <DropdownMenuItem
-                      key={org}
+                      key={workspace.id}
                       onClick={() => {
-                        setActiveOrg(org);
                         setIsOpen(false);
+                        if (!isSelected) switchWorkspace(workspace.id);
                       }}
                       className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium cursor-pointer transition ${
                         isSelected
@@ -146,7 +154,10 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
                           : "text-foreground hover:bg-muted"
                       }`}
                     >
-                      <span className="truncate">{org}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate">{workspace.personal ? "Personal workspace" : workspace.name}</span>
+                        <span className="block text-[10px] font-normal capitalize text-muted-foreground">{workspace.role}</span>
+                      </span>
                       {isSelected && <Check className="size-3.5 text-primary shrink-0 ml-1" />}
                     </DropdownMenuItem>
                   );
@@ -305,7 +316,8 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleCreateOrg} className="space-y-4 py-2">
+          <form onSubmit={(e) => void handleCreateOrg(e)} className="space-y-4 py-2">
+            {createOrgError ? <p className="text-xs text-destructive">{createOrgError}</p> : null}
             <div className="space-y-2">
               <Label htmlFor="org-name">Organisation name</Label>
               <Input
@@ -326,7 +338,9 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
               >
                 Cancel
               </Button>
-              <Button type="submit">Create Organisation</Button>
+              <Button type="submit" disabled={isCreatingOrg}>
+                {isCreatingOrg ? "Creating…" : "Create Organisation"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -341,7 +355,7 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
               Create Team
             </DialogTitle>
             <DialogDescription>
-              Create a dedicated department or project team within {activeOrg}.
+              Create a dedicated department or project team within {companyName}.
             </DialogDescription>
           </DialogHeader>
 

@@ -1,7 +1,10 @@
 import { getSignUpUrl } from "@workos-inc/authkit-nextjs";
 import { redirect } from "next/navigation";
 
+import { safeReturnTo } from "@/lib/safe-return-to";
+
 export async function GET(request: Request) {
-  const email = new URL(request.url).searchParams.get("email") || undefined;
-  redirect(await getSignUpUrl({ loginHint: email }));
+  const params = new URL(request.url).searchParams;
+  const email = params.get("email") || undefined;
+  redirect(await getSignUpUrl({ loginHint: email, returnTo: safeReturnTo(params.get("returnTo")) }));
 }

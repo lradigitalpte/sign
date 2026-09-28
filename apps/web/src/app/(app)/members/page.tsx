@@ -9,6 +9,7 @@ import {
   Clock,
   Copy,
   ExternalLink,
+  Eye,
   Loader2,
   LogOut,
   Mail,
@@ -62,10 +63,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useInvitations, useMe, useMembers, usePlatformToken } from "@/hooks/use-envelope-api";
+import { switchWorkspace } from "@/lib/active-workspace";
 import {
   ApiError,
+  createWorkspace,
   initialsFor,
   inviteMember,
+  isWorkspaceManager,
   removeMember,
   resendInvitation,
   revokeInvitation,
@@ -76,14 +80,74 @@ import {
 
 type TabType = "active" | "pending";
 
+const ROLE_OPTIONS = [
+  {
+    value: "admin",
+    label: "Admin",
+    icon: ShieldCheck,
+    description: "Invite and manage members, change workspace settings, and manage all documents.",
+  },
+  {
+    value: "member",
+    label: "Member",
+    icon: UserCheck,
+    description: "Create, upload, send, and sign documents. Cannot change settings or members.",
+  },
+  {
+    value: "viewer",
+    label: "Viewer",
+    icon: Eye,
+    description: "Read-only, for auditors: view documents, recipients, and audit trails. Cannot create, send, or delete.",
+  },
+] as const;
+
+const ROLE_BADGE: Record<string, { className: string; icon: typeof UserCheck; scope: string; permissions: string }> = {
+  owner: {
+    className: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20",
+    icon: ShieldAlert,
+    scope: "Full ownership",
+    permissions: "Full control: manages members and their roles, workspace settings, branding, storage, and every document. The owner can't be removed.",
+  },
+  admin: {
+    className: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20",
+    icon: ShieldCheck,
+    scope: "Administrator",
+    permissions: "Can invite and remove members, change roles, configure workspace settings and storage, and manage every document.",
+  },
+  member: {
+    className: "bg-neutral-500/10 text-neutral-700 dark:text-neutral-300 border border-neutral-500/20",
+    icon: UserCheck,
+    scope: "Standard member",
+    permissions: "Can create, send, void, and sign documents, use templates and folders, and self-sign PDFs. Cannot change settings or members.",
+  },
+  viewer: {
+    className: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20",
+    icon: Eye,
+    scope: "Read-only (audit)",
+    permissions: "Can view every document, its recipients, and its audit trail, and download certificates. Cannot create, send, edit, or delete anything.",
+  },
+};
+
+function roleBadge(role?: string) {
+  return ROLE_BADGE[role ?? ""] ?? ROLE_BADGE.member;
+}
+
 export default function MembersPage() {
   const t = useTranslations("Members");
   const queryClient = useQueryClient();
   const { getAccessToken } = usePlatformToken();
-  const me = useMe().data?.user;
+  const meQuery = useMe();
+  const me = meQuery.data?.user;
+  const workspace = meQuery.data?.workspace;
+  const canManage = isWorkspaceManager(workspace?.role);
+  const isPersonal = Boolean(workspace?.personal);
 
   const membersQuery = useMembers();
-  const invitationsQuery = useInvitations();
+  const invitationsQuery = useInvitations(canManage && !isPersonal);
+
+  // Create organization (shown in a personal workspace, which can't have members)
+  const [newOrgName, setNewOrgName] = useState("");
+  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
 
   const members = membersQuery.data ?? [];
   const invitations = invitationsQuery.data ?? [];
@@ -152,7 +216,7 @@ export default function MembersPage() {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error("Not authenticated");
-      await inviteMember(token, {
+      const invitation = await inviteMember(token, {
         email: inviteEmail.trim(),
         role: inviteRole,
       });
@@ -160,7 +224,11 @@ export default function MembersPage() {
       setIsInviteOpen(false);
       setInviteEmail("");
       setInviteRole("member");
-      showNotification(`Invitation sent to ${inviteEmail.trim()}`);
+      showNotification(
+        invitation.emailSent
+          ? `Invitation emailed to ${invitation.email}`
+          : `Invitation created for ${invitation.email}. Email isn't configured, so use "Copy link" to share it.`
+      );
       setActiveTab("pending");
     } catch (err) {
       setInviteError(err instanceof ApiError ? err.message : "Failed to send invitation.");
@@ -219,38 +287,90 @@ export default function MembersPage() {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error("Not authenticated");
-      await resendInvitation(token, invitation.id);
+      const resent = await resendInvitation(token, invitation.id);
       await queryClient.invalidateQueries({ queryKey: ["members-invitations"] });
-      showNotification(`Resent invitation to ${invitation.email}`);
+      showNotification(
+        resent.emailSent
+          ? `Resent invitation to ${invitation.email}`
+          : `Renewed the invitation link for ${invitation.email}. Use "Copy link" to share it.`
+      );
     } catch (err) {
       showNotification(err instanceof ApiError ? err.message : "Failed to resend invitation", "error");
     }
   };
 
   const copyInviteLink = (token: string, id: string) => {
-    const link = `${window.location.origin}/auth/sign-up?invitation=${token}`;
+    const link = `${window.location.origin}/invitations/${token}`;
     void navigator.clipboard.writeText(link);
     setCopiedTokenId(id);
     setTimeout(() => setCopiedTokenId(null), 2500);
     showNotification("Invitation link copied to clipboard");
   };
 
+  const handleCreateOrg = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!newOrgName.trim()) return;
+    setIsCreatingOrg(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Not authenticated");
+      const created = await createWorkspace(token, newOrgName.trim());
+      switchWorkspace(created.id, "/members");
+    } catch (err) {
+      showNotification(err instanceof ApiError ? err.message : "Failed to create organization", "error");
+      setIsCreatingOrg(false);
+    }
+  };
+
+  const openInvite = () => {
+    setInviteError(null);
+    setIsInviteOpen(true);
+  };
+  const canInvite = canManage && !isPersonal;
+  const profileBadge = roleBadge(selectedMemberProfile?.role);
+  const ProfileBadgeIcon = profileBadge.icon;
+
   return (
     <main className="mx-auto w-full max-w-[1200px] px-3 py-6 sm:px-5 lg:px-8">
       {/* Top Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader title={t("title")} description={t("description")} />
-        <Button
-          onClick={() => {
-            setInviteError(null);
-            setIsInviteOpen(true);
-          }}
-          className="gap-2 shadow-sm shrink-0"
-        >
-          <UserPlus className="size-4" />
-          {t("inviteMember")}
-        </Button>
+        {canInvite ? (
+          <Button onClick={openInvite} className="gap-2 shadow-sm shrink-0">
+            <UserPlus className="size-4" />
+            {t("inviteMember")}
+          </Button>
+        ) : null}
       </div>
+
+      {isPersonal ? (
+        <div className="mt-6 rounded-2xl border border-primary/25 bg-primary/[0.04] p-5">
+          <div className="flex items-start gap-3">
+            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+              <Building2 className="size-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-foreground">This is your personal workspace</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Personal workspaces are just for you. To work with other people, create an organization. You&apos;ll be its owner, and you can invite admins, members, and viewers. Your personal workspace stays available from the account menu.
+              </p>
+              <form onSubmit={(e) => void handleCreateOrg(e)} className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <Input
+                  required
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  placeholder="Organization name, e.g. Acme Legal"
+                  className="h-9 text-sm sm:max-w-xs"
+                />
+                <Button type="submit" disabled={isCreatingOrg} className="h-9 gap-2 text-xs">
+                  {isCreatingOrg ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                  Create organization
+                </Button>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Notification Toast Banner */}
       {actionMessage ? (
@@ -319,18 +439,20 @@ export default function MembersPage() {
             <span>Active members ({members.length})</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("pending")}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-semibold transition cursor-pointer ${
-              activeTab === "pending"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
-          >
-            <Mail className="size-4" />
-            <span>Pending invites ({invitations.length})</span>
-          </button>
+          {canInvite ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab("pending")}
+              className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-semibold transition cursor-pointer ${
+                activeTab === "pending"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <Mail className="size-4" />
+              <span>Pending invites ({invitations.length})</span>
+            </button>
+          ) : null}
         </div>
 
         <div className="relative w-full sm:w-72">
@@ -346,7 +468,7 @@ export default function MembersPage() {
       </div>
 
       {/* Tab 1: Active Members */}
-      {activeTab === "active" ? (
+      {activeTab === "active" || !canInvite ? (
         <div className="mt-4">
           {membersQuery.isLoading ? (
             <div className="flex h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -366,9 +488,9 @@ export default function MembersPage() {
                   ? "Try searching with a different name or email."
                   : "Invite colleagues to collaborate, send envelopes, and sign documents together."}
               </p>
-              {!searchQuery && (
+              {!searchQuery && canInvite && (
                 <Button
-                  onClick={() => setIsInviteOpen(true)}
+                  onClick={openInvite}
                   variant="outline"
                   size="sm"
                   className="mt-4 gap-2"
@@ -382,8 +504,9 @@ export default function MembersPage() {
             <div className="divide-y rounded-2xl border bg-card shadow-2xs overflow-hidden">
               {filteredMembers.map((member) => {
                 const isOwner = member.role === "owner";
-                const isAdmin = member.role === "admin";
                 const isCurrentUser = me?.id === member.id;
+                const badge = roleBadge(member.role);
+                const BadgeIcon = badge.icon;
 
                 return (
                   <div
@@ -420,22 +543,8 @@ export default function MembersPage() {
 
                     <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
                       {/* Role Badge */}
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          isOwner
-                            ? "bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20"
-                            : isAdmin
-                            ? "bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20"
-                            : "bg-neutral-500/10 text-neutral-700 dark:text-neutral-300 border border-neutral-500/20"
-                        }`}
-                      >
-                        {isOwner ? (
-                          <ShieldAlert className="size-3" />
-                        ) : isAdmin ? (
-                          <ShieldCheck className="size-3" />
-                        ) : (
-                          <UserCheck className="size-3" />
-                        )}
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge.className}`}>
+                        <BadgeIcon className="size-3" />
                         <span className="capitalize">{member.role}</span>
                       </span>
 
@@ -457,7 +566,7 @@ export default function MembersPage() {
                       </Button>
 
                       {/* Member Actions Menu */}
-                      {!isOwner && (
+                      {canManage && !isOwner && !isCurrentUser && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -471,15 +580,13 @@ export default function MembersPage() {
                           <DropdownMenuContent align="end" className="w-48">
                             <DropdownMenuItem
                               onClick={() => {
-                                setTargetRole(isAdmin ? "member" : "admin");
+                                setTargetRole(member.role);
                                 setRoleChangeMember(member);
                               }}
                               className="gap-2 cursor-pointer"
                             >
                               <Shield className="size-4 text-blue-500" />
-                              <span>
-                                {isAdmin ? "Change to Member" : "Promote to Admin"}
-                              </span>
+                              <span>Change role</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -520,9 +627,9 @@ export default function MembersPage() {
                   ? "Try searching with another email."
                   : "Invitations you send to colleagues will appear here until they accept."}
               </p>
-              {!searchQuery && (
+              {!searchQuery && canInvite && (
                 <Button
-                  onClick={() => setIsInviteOpen(true)}
+                  onClick={openInvite}
                   variant="outline"
                   size="sm"
                   className="mt-4 gap-2"
@@ -605,7 +712,7 @@ export default function MembersPage() {
 
       {/* Modal 1: Invite Member Dialog */}
       <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
-        <DialogContent className="sm:max-w-lg p-6">
+        <DialogContent className="sm:max-w-2xl p-6">
           <DialogHeader className="space-y-3 pb-2 border-b border-border/60">
             <div className="flex items-start gap-3.5">
               <div className="grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary shrink-0 border border-primary/20 shadow-2xs">
@@ -659,82 +766,40 @@ export default function MembersPage() {
                 <span className="text-[11px] text-muted-foreground">Select workspace access level</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Member Card */}
-                <button
-                  type="button"
-                  onClick={() => setInviteRole("member")}
-                  className={`flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer relative ${
-                    inviteRole === "member"
-                      ? "border-primary bg-primary/[0.04] ring-1 ring-primary/30 shadow-xs"
-                      : "border-border/80 bg-card hover:border-border hover:bg-muted/30"
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`grid size-7 place-items-center rounded-lg ${
-                          inviteRole === "member"
-                            ? "bg-primary/15 text-primary"
-                            : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        <UserCheck className="size-3.5" />
-                      </div>
-                      <span className="font-semibold text-sm text-foreground">Member</span>
-                    </div>
-                    <div
-                      className={`size-4 rounded-full border grid place-items-center transition-all ${
-                        inviteRole === "member"
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-muted-foreground/30"
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {ROLE_OPTIONS.map((option) => {
+                  const Icon = option.icon;
+                  const selected = inviteRole === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setInviteRole(option.value)}
+                      className={`flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer relative ${
+                        selected
+                          ? "border-primary bg-primary/[0.04] ring-1 ring-primary/30 shadow-xs"
+                          : "border-border/80 bg-card hover:border-border hover:bg-muted/30"
                       }`}
                     >
-                      {inviteRole === "member" && <Check className="size-2.5 stroke-[3]" />}
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground leading-snug">
-                    Can create, upload, and sign envelopes. Cannot edit workspace settings.
-                  </p>
-                </button>
-
-                {/* Admin Card */}
-                <button
-                  type="button"
-                  onClick={() => setInviteRole("admin")}
-                  className={`flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer relative ${
-                    inviteRole === "admin"
-                      ? "border-primary bg-primary/[0.04] ring-1 ring-primary/30 shadow-xs"
-                      : "border-border/80 bg-card hover:border-border hover:bg-muted/30"
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`grid size-7 place-items-center rounded-lg ${
-                          inviteRole === "admin"
-                            ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                            : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        <ShieldCheck className="size-3.5" />
+                      <div className="flex items-center justify-between w-full mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <div className={`grid size-7 place-items-center rounded-lg ${selected ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
+                            <Icon className="size-3.5" />
+                          </div>
+                          <span className="font-semibold text-sm text-foreground">{option.label}</span>
+                        </div>
+                        <div
+                          className={`size-4 rounded-full border grid place-items-center transition-all ${
+                            selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/30"
+                          }`}
+                        >
+                          {selected && <Check className="size-2.5 stroke-[3]" />}
+                        </div>
                       </div>
-                      <span className="font-semibold text-sm text-foreground">Admin</span>
-                    </div>
-                    <div
-                      className={`size-4 rounded-full border grid place-items-center transition-all ${
-                        inviteRole === "admin"
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-muted-foreground/30"
-                      }`}
-                    >
-                      {inviteRole === "admin" && <Check className="size-2.5 stroke-[3]" />}
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground leading-snug">
-                    Full access to invite members, manage billing, settings, and all envelopes.
-                  </p>
-                </button>
+                      <p className="text-[11px] text-muted-foreground leading-snug">{option.description}</p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -792,43 +857,29 @@ export default function MembersPage() {
           <div className="space-y-3 pt-1">
             <Label className="text-xs font-semibold text-foreground">Select new role</Label>
             <div className="grid grid-cols-1 gap-2">
-              <button
-                type="button"
-                onClick={() => setTargetRole("member")}
-                className={`flex items-start justify-between p-3 rounded-xl border text-left transition cursor-pointer ${
-                  targetRole === "member"
-                    ? "border-primary bg-primary/[0.04] ring-1 ring-primary/30"
-                    : "border-border/80 hover:bg-muted/30"
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <UserCheck className="size-3.5 text-muted-foreground" />
-                    <span>Member</span>
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">Standard access to send, manage, and sign envelopes.</p>
-                </div>
-                {targetRole === "member" && <Check className="size-4 text-primary shrink-0 mt-0.5" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTargetRole("admin")}
-                className={`flex items-start justify-between p-3 rounded-xl border text-left transition cursor-pointer ${
-                  targetRole === "admin"
-                    ? "border-primary bg-primary/[0.04] ring-1 ring-primary/30"
-                    : "border-border/80 hover:bg-muted/30"
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <ShieldCheck className="size-3.5 text-blue-500" />
-                    <span>Admin</span>
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">Full administrative control over settings, billing, and team members.</p>
-                </div>
-                {targetRole === "admin" && <Check className="size-4 text-primary shrink-0 mt-0.5" />}
-              </button>
+              {ROLE_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const selected = targetRole === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setTargetRole(option.value)}
+                    className={`flex items-start justify-between p-3 rounded-xl border text-left transition cursor-pointer ${
+                      selected ? "border-primary bg-primary/[0.04] ring-1 ring-primary/30" : "border-border/80 hover:bg-muted/30"
+                    }`}
+                  >
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Icon className="size-3.5 text-muted-foreground" />
+                        <span>{option.label}</span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">{option.description}</p>
+                    </div>
+                    {selected && <Check className="size-4 text-primary shrink-0 mt-0.5" />}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -932,22 +983,8 @@ export default function MembersPage() {
 
             {/* Role Badge + Status Pill in Header */}
             <div className="mt-4 flex items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  selectedMemberProfile?.role === "owner"
-                    ? "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30"
-                    : selectedMemberProfile?.role === "admin"
-                    ? "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30"
-                    : "bg-neutral-500/15 text-neutral-700 dark:text-neutral-300 border border-neutral-500/30"
-                }`}
-              >
-                {selectedMemberProfile?.role === "owner" ? (
-                  <ShieldAlert className="size-3.5" />
-                ) : selectedMemberProfile?.role === "admin" ? (
-                  <ShieldCheck className="size-3.5" />
-                ) : (
-                  <UserCheck className="size-3.5" />
-                )}
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${profileBadge.className}`}>
+                <ProfileBadgeIcon className="size-3.5" />
                 <span className="capitalize">{selectedMemberProfile?.role}</span>
               </span>
 
@@ -983,11 +1020,7 @@ export default function MembersPage() {
                 <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Access Scope</p>
                 <p className="text-xs font-semibold text-foreground mt-1 flex items-center gap-1.5">
                   <Shield className="size-3.5 text-primary" />
-                  {selectedMemberProfile?.role === "owner"
-                    ? "All Org & Teams"
-                    : selectedMemberProfile?.role === "admin"
-                    ? "Admin Workspace"
-                    : "Standard Member"}
+                  {profileBadge.scope}
                 </p>
               </div>
             </div>
@@ -999,11 +1032,7 @@ export default function MembersPage() {
                 Role Permissions
               </p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {selectedMemberProfile?.role === "owner"
-                  ? "Full ownership authority: manages billing subscriptions, invites and removes admins, views audit trails, configures company branding, and administers envelope workflows."
-                  : selectedMemberProfile?.role === "admin"
-                  ? "Administrator authority: can invite and manage members, configure company workspace preferences, view team analytics, and manage envelopes."
-                  : "Member authority: can create, sign, and send envelopes, use workspace document templates, and self-sign PDF documents."}
+                {profileBadge.permissions}
               </p>
             </div>
 
@@ -1059,7 +1088,7 @@ export default function MembersPage() {
                       <span>Send Email</span>
                     </Button>
 
-                    {selectedMemberProfile?.role !== "owner" && (
+                    {canManage && selectedMemberProfile?.role !== "owner" && (
                       <Button
                         variant="outline"
                         className="justify-start gap-2 h-10 rounded-xl text-xs"
@@ -1067,20 +1096,18 @@ export default function MembersPage() {
                           const memberToChange = selectedMemberProfile;
                           setSelectedMemberProfile(null);
                           if (memberToChange) {
-                            setTargetRole(memberToChange.role === "admin" ? "member" : "admin");
+                            setTargetRole(memberToChange.role);
                             setRoleChangeMember(memberToChange);
                           }
                         }}
                       >
                         <Shield className="size-4 text-blue-500" />
-                        <span>
-                          {selectedMemberProfile?.role === "admin" ? "Demote to Member" : "Promote to Admin"}
-                        </span>
+                        <span>Change role</span>
                       </Button>
                     )}
                   </div>
 
-                  {selectedMemberProfile?.role !== "owner" && (
+                  {canManage && selectedMemberProfile?.role !== "owner" && (
                     <Button
                       variant="outline"
                       className="w-full justify-start gap-2 h-10 rounded-xl text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"

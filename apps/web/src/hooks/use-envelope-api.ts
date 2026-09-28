@@ -21,6 +21,7 @@ import {
   listInvitations,
   listMembers,
   listSecuredPDFs,
+  listWorkspaces,
   updateProfile,
   updateWorkspaceSettings,
   updateWorkspaceStorage,
@@ -314,11 +315,27 @@ export function useMembers() {
   });
 }
 
-export function useInvitations() {
+export function useWorkspaces() {
+  const { getAccessToken, loading } = usePlatformToken();
+  return useQuery({
+    queryKey: ["workspaces"],
+    enabled: !loading,
+    queryFn: async () => {
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+      return listWorkspaces(token);
+    },
+  });
+}
+
+/** Pending invitations are only visible to owners and admins, so pass `enabled` from the caller's role. */
+export function useInvitations(enabled = true) {
   const { getAccessToken, loading } = usePlatformToken();
   return useQuery({
     queryKey: ["members-invitations"],
-    enabled: !loading,
+    enabled: !loading && enabled,
     queryFn: async () => {
       const token = await getAccessToken();
       if (!token) {

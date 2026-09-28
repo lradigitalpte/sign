@@ -72,10 +72,13 @@ ON CONFLICT (provider, provider_subject) DO UPDATE SET organization_id = EXCLUDE
 	if err != nil {
 		return Session{}, fmt.Errorf("upsert workspace identity: %w", err)
 	}
-	_, err = tx.Exec(ctx, `
+	// The provider role only seeds a new membership. After that the local role is authoritative,
+	// so role changes made on the Members page are not reverted on the next request.
+	err = tx.QueryRow(ctx, `
 INSERT INTO organization_memberships (organization_id, user_id, role)
 VALUES ($1::uuid, $2::uuid, $3::membership_role)
-ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role`, workspace.ID, user.ID, organization.Role)
+ON CONFLICT (organization_id, user_id) DO UPDATE SET role = organization_memberships.role
+RETURNING role::text`, workspace.ID, user.ID, organization.Role).Scan(&workspace.Role)
 	if err != nil {
 		return Session{}, fmt.Errorf("upsert membership: %w", err)
 	}
@@ -84,7 +87,7 @@ ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role`, work
 	}
 	user.Provider = provider
 	user.ProviderSubject = source.Subject
-	workspace.Role = organization.Role
+	workspace.Personal = organization.Personal
 	return Session{User: user, Workspace: workspace}, nil
 }
 

@@ -14,6 +14,10 @@ func SessionFromContext(ctx context.Context) (Session, bool) {
 	return session, ok
 }
 
+func ContextWithSession(ctx context.Context, session Session) context.Context {
+	return context.WithValue(ctx, contextKey{}, session)
+}
+
 type ProviderUser struct {
 	Subject       string
 	Email         string
@@ -29,10 +33,11 @@ type ProviderOrganization struct {
 }
 
 type Workspace struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-	Role string `json:"role"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Slug     string `json:"slug"`
+	Role     string `json:"role"`
+	Personal bool   `json:"personal"`
 }
 
 type Session struct {
@@ -75,12 +80,19 @@ func (s *Service) UpdateProfile(ctx context.Context, userID, name string, avatar
 }
 
 type Service struct {
-	directory Directory
-	store     Store
+	directory  Directory
+	store      Store
+	workspaces WorkspaceStore
 }
 
 func NewService(directory Directory, store Store) *Service {
 	return &Service{directory: directory, store: store}
+}
+
+// WithWorkspaces enables switching the active workspace per request and listing a user's workspaces.
+func (s *Service) WithWorkspaces(workspaces WorkspaceStore) *Service {
+	s.workspaces = workspaces
+	return s
 }
 
 func (s *Service) Sync(ctx context.Context, subject, organizationSubject, role string) (Session, error) {
@@ -121,6 +133,8 @@ func localRole(role string) string {
 		return "owner"
 	case "admin":
 		return "admin"
+	case "viewer":
+		return "viewer"
 	default:
 		return "member"
 	}

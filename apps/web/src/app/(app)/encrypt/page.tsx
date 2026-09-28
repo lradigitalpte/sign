@@ -9,6 +9,7 @@ import { VaultFiles } from "@/components/pdf-security/vault-files";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePlatformToken } from "@/hooks/use-envelope-api";
+import { workspaceHeaders } from "@/lib/active-workspace";
 import { platformApiUrl } from "@/lib/platform-api";
 
 type Mode = "encrypt" | "decrypt" | "verify" | "files";
@@ -53,7 +54,7 @@ export default function EncryptPage() {
       const token = await getAccessToken();
       if (!token) throw new Error("Your session has expired.");
       const body = new FormData(); body.append("file", file); if (mode !== "verify") body.append("password", password);
-      const response = await fetch(`${platformApiUrl}/v1/pdf-security/${mode}`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body });
+      const response = await fetch(`${platformApiUrl}/v1/pdf-security/${mode}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, ...workspaceHeaders() }, body });
       if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error ?? "Unable to process this PDF."); }
       if (mode === "verify") {
         const payload = await response.json();

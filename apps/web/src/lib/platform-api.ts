@@ -1,3 +1,5 @@
+import { getActiveWorkspaceId, switchWorkspace, WORKSPACE_HEADER, workspaceHeaders } from "@/lib/active-workspace";
+
 export const platformApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export class ApiError extends Error {
@@ -185,12 +187,20 @@ export async function platformRequest<T>(token: string, path: string, init: Requ
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const workspaceId = getActiveWorkspaceId();
+  if (workspaceId && !headers.has(WORKSPACE_HEADER)) {
+    headers.set(WORKSPACE_HEADER, workspaceId);
+  }
 
   const response = await fetch(`${platformApiUrl}${path}`, {
     ...init,
     headers,
   });
   const payload = await readJson(response);
+  if (response.status === 403 && payload.code === "workspace_forbidden" && typeof window !== "undefined") {
+    // The user was removed from the stored workspace; fall back to their default one.
+    switchWorkspace(undefined);
+  }
   if (!response.ok) {
     throw new ApiError(response.status, typeof payload.error === "string" ? payload.error : "Request failed", payload);
   }
@@ -431,9 +441,42 @@ export function sendEnvelope(token: string, envelopeId: string, idempotencyKey: 
 
 export type MeResponse = {
   user: { id: string; email: string; name: string; avatarDataUrl?: string };
-  workspace: { id: string; name: string; slug: string; role: string };
+  workspace: Workspace;
   permissions?: string[];
 };
+
+export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
+
+export type Workspace = { id: string; name: string; slug: string; role: WorkspaceRole; personal: boolean };
+
+export function isWorkspaceManager(role?: string) {
+  return role === "owner" || role === "admin";
+}
+
+export function listWorkspaces(token: string) {
+  return platformRequest<Collection<Workspace>>(token, "/v1/workspaces").then((body) => body.data ?? []);
+}
+
+export function createWorkspace(token: string, name: string) {
+  return platformRequest<Workspace>(token, "/v1/workspaces", { method: "POST", body: JSON.stringify({ name }) });
+}
+
+export type InvitationPreview = {
+  organizationName: string;
+  inviterName: string;
+  email: string;
+  role: WorkspaceRole;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  expiresAt: string;
+};
+
+export function getInvitationPreview(invitationToken: string) {
+  return publicRequest<InvitationPreview>(`/v1/invitations/${encodeURIComponent(invitationToken)}`);
+}
+
+export function acceptInvitation(token: string, invitationToken: string) {
+  return platformRequest<{ workspace: Workspace }>(token, `/v1/invitations/${encodeURIComponent(invitationToken)}/accept`, { method: "POST" });
+}
 
 export type SignatureAppearance = {
   id?: string;
@@ -477,7 +520,7 @@ export function rotateSecuredPDFPassword(token:string,fileId:string,password:str
 export function deleteSecuredPDFPassword(token:string,fileId:string,version:number){return platformRequest<unknown>(token,`/v1/pdf-security/files/${fileId}/passwords/${version}`,{method:"DELETE"})}
 
 export async function fetchSecuredPDF(token: string, fileId: string) {
-  const response = await fetch(`${platformApiUrl}/v1/pdf-security/files/${fileId}/download`, { headers: { Authorization: `Bearer ${token}` } });
+  const response = await fetch(`${platformApiUrl}/v1/pdf-security/files/${fileId}/download`, { headers: { Authorization: `Bearer ${token}`, ...workspaceHeaders() } });
   if (!response.ok) throw new ApiError(response.status, "Unable to download PDF");
   return response.blob();
 }
@@ -522,6 +565,7 @@ export type OrganizationInvitation = {
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
+  emailSent?: boolean;
 };
 
 export type AuditEvent = {

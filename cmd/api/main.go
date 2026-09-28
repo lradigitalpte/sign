@@ -64,7 +64,8 @@ func main() {
 		logger.Error("configure WorkOS user directory", "error", err)
 		os.Exit(1)
 	}
-	users := identity.NewService(directory, identity.NewPostgresStore(db))
+	identityStore := identity.NewPostgresStore(db)
+	users := identity.NewService(directory, identityStore).WithWorkspaces(identityStore)
 	envelopes := envelope.NewService(envelope.NewPostgresStore(db))
 	objects, err := storage.NewMinIO(ctx, cfg.StorageEndpoint, cfg.StorageAccessKey, cfg.StorageSecretKey, cfg.StorageBucket, cfg.StorageUseSSL)
 	if err != nil {
@@ -101,6 +102,28 @@ func main() {
 		WithCompleter(sender)
 	inboxService := inbox.NewService(inbox.NewPostgresStore(db))
 	membersService := members.NewService(db)
+
+	// Organization invitations are sent directly from the API. In development without a relay they
+	// are written to the email preview folder that the worker's preview server displays.
+	var inviteMailer email.Mailer
+	switch {
+	case cfg.ResendAPIKey != "":
+		inviteMailer = email.NewResend(cfg.ResendAPIKey, cfg.ResendFrom)
+	case cfg.SMTPHost != "":
+		inviteMailer = email.NewSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
+	}
+	if cfg.Environment == "development" {
+		if preview, err := email.NewPreview(cfg.EmailPreviewDir, logger, inviteMailer); err == nil {
+			inviteMailer = preview
+		} else {
+			logger.Warn("configure invitation email preview", "error", err)
+		}
+	}
+	if inviteMailer != nil {
+		membersService.WithMailer(inviteMailer, cfg.WebOrigin, logger)
+	} else {
+		logger.Warn("no email provider configured; organization invitations must be shared by link")
+	}
 
 	// Deployments without a separate worker service can drain the email queue from the API process.
 	// Jobs are claimed with SKIP LOCKED, so this is safe alongside cmd/worker.
