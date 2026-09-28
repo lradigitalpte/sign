@@ -287,14 +287,15 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
 
                 <div className="pt-1 my-1 border-t border-border/60">
                   <DropdownMenuItem asChild variant="destructive">
-                    <Link
+                    {/* A plain <a>, not <Link>: sign-out redirects to WorkOS, which a client-side fetch can't follow (CORS). */}
+                    <a
                       href="/auth/sign-out"
                       onClick={() => setIsOpen(false)}
                       className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-destructive hover:bg-destructive/10 cursor-pointer"
                     >
                       <LogOut className="size-3.5" />
                       <span>Sign Out</span>
-                    </Link>
+                    </a>
                   </DropdownMenuItem>
                 </div>
               </div>

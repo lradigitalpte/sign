@@ -1132,10 +1132,10 @@ export default function MembersPage() {
           <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-6 py-3">
             {me?.id === selectedMemberProfile?.id ? (
               <Button variant="ghost" size="sm" asChild className="gap-1.5 text-xs text-destructive hover:bg-destructive/10">
-                <Link href="/auth/sign-out">
+                <a href="/auth/sign-out">
                   <LogOut className="size-3.5" />
                   <span>Sign Out</span>
-                </Link>
+                </a>
               </Button>
             ) : (
               <span className="text-[11px] text-muted-foreground">ID: {selectedMemberProfile?.id?.slice(0, 8)}…</span>
