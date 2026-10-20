@@ -186,6 +186,25 @@ ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role, updated_at = now()`, u
 	return a, tx.Commit(ctx)
 }
 
+// Bootstrap makes each email a super_admin unless they're already an admin, so it never changes a role someone
+// set in the admin app. It returns what happened to each email; one that hasn't signed in yet is skipped.
+func (s *Service) Bootstrap(ctx context.Context, emails []string) map[string]error {
+	results := make(map[string]error, len(emails))
+	for _, email := range emails {
+		var exists bool
+		if err := s.db.QueryRow(ctx, `
+SELECT EXISTS (SELECT 1 FROM platform_admins a JOIN users u ON u.id = a.user_id WHERE u.email = lower(trim($1)))`, email).Scan(&exists); err != nil {
+			results[email] = err
+			continue
+		}
+		if exists {
+			continue
+		}
+		_, results[email] = s.grant(ctx, email, RoleSuperAdmin, nil, "BOOTSTRAP_SUPER_ADMINS")
+	}
+	return results
+}
+
 // Revoke removes platform admin access. The last super_admin can't be removed.
 func (s *Service) Revoke(ctx context.Context, email string, actor *string, reason string) error {
 	tx, err := s.db.Begin(ctx)

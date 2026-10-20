@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"signing-platform/internal/admin"
 	platformauth "signing-platform/internal/auth"
 	"signing-platform/internal/attachment"
 	"signing-platform/internal/config"
@@ -55,6 +56,13 @@ func main() {
 	if err := database.Migrate(ctx, db, "db/migrations"); err != nil {
 		logger.Error("apply database migrations", "error", err)
 		os.Exit(1)
+	}
+	for email, err := range admin.NewService(db).Bootstrap(ctx, cfg.BootstrapSuperAdmins) {
+		if err != nil {
+			logger.Warn("bootstrap super admin", "email", email, "error", err)
+		} else {
+			logger.Info("bootstrap super admin granted", "email", email)
+		}
 	}
 
 	verifier, err := platformauth.NewWorkOSVerifier(cfg.WorkOSClientID, cfg.WorkOSIssuer, cfg.WorkOSJWKSURL)

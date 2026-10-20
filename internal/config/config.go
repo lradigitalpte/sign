@@ -39,10 +39,13 @@ type Config struct {
 	// Stripe takes payments for paid plans. Without a secret key, checkout is unavailable.
 	StripeSecretKey     string
 	StripeWebhookSecret string // verifies POST /webhooks/stripe
-	ShutdownTimeout     time.Duration
-	ReadTimeout         time.Duration
-	WriteTimeout        time.Duration
-	IdleTimeout         time.Duration
+	// Emails made super_admin when the API starts, if they aren't admins yet. For setting up the first
+	// admin where cmd/admin can't reach the database; remove it once someone has access.
+	BootstrapSuperAdmins []string
+	ShutdownTimeout      time.Duration
+	ReadTimeout          time.Duration
+	WriteTimeout         time.Duration
+	IdleTimeout          time.Duration
 }
 
 func Load() (Config, error) {
@@ -72,6 +75,11 @@ func Load() (Config, error) {
 		EmailPreviewDir:     os.Getenv("EMAIL_PREVIEW_DIR"),
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+	}
+	for _, email := range strings.Split(os.Getenv("BOOTSTRAP_SUPER_ADMINS"), ",") {
+		if email = strings.TrimSpace(email); email != "" {
+			cfg.BootstrapSuperAdmins = append(cfg.BootstrapSuperAdmins, email)
+		}
 	}
 
 	if cfg.Environment == "" {
