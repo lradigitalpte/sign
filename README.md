@@ -9,7 +9,7 @@ Original electronic-signature platform built with a Next.js frontend and Go back
 - `packages/ui` — design tokens and UI components shared by both apps
 - `cmd/api` — Go REST API (customer routes under `/v1`, admin routes under `/admin/v1`)
 - `cmd/worker` — Go background worker
-- `cmd/admin` — grant, revoke and list platform admins are 
+- `cmd/admin` — grant, revoke and list platform admins 
 
 ## Run the web application
 
