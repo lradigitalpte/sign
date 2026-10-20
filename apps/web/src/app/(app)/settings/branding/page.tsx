@@ -201,7 +201,7 @@ export default function BrandingSettingsPage() {
   // The organization's branding, or the current team's (teams other than the default one can customize).
   const scoped = useScopedSettings("branding");
   return (
-    <main className="mx-auto w-full max-w-4xl px-3 py-8 sm:px-0 lg:py-10">
+    <main className="w-full px-3 py-8 sm:px-0 lg:py-10">
       <header className="flex flex-col justify-between gap-5 border-b pb-7 sm:flex-row sm:items-end">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[.16em] text-blue-600">Team settings</p>

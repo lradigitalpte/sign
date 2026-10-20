@@ -24,7 +24,7 @@ function Section({ icon: Icon, title, description, actions, children }: { icon: 
   return (
     <section className="rounded-3xl border bg-card p-5 shadow-sm sm:p-6">
       <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-subtle text-muted-foreground"><Icon className="size-4" /></span>
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-300"><Icon className="size-4" /></span>
         <div className="flex-1">
           <h2 className="text-sm font-semibold">{title}</h2>
           {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}

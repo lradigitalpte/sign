@@ -43,7 +43,7 @@ function Card({ icon: Icon, title, description, actions, children }: { icon: typ
   return (
     <section className="rounded-3xl border bg-card p-5 shadow-sm sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-subtle text-muted-foreground"><Icon className="size-4" /></span>
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-300"><Icon className="size-4" /></span>
         <div className="flex-1">
           <h2 className="text-sm font-semibold">{title}</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>

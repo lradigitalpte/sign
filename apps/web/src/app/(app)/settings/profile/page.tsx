@@ -61,7 +61,7 @@ export default function ProfileSettingsPage() {
 
   if (meQuery.isError) {
     return (
-      <main className="mx-auto w-full max-w-5xl px-3 py-6 sm:px-0 lg:py-10">
+      <main className="w-full px-3 py-6 sm:px-0 lg:py-10">
         <div role="alert" className="flex min-h-[420px] flex-col items-center justify-center gap-3 rounded-3xl border bg-card p-6 text-center">
           <p className="font-medium">Couldn&apos;t load your profile</p>
           <p className="max-w-sm text-sm text-muted-foreground">{meQuery.error instanceof Error ? meQuery.error.message : "Check your connection and try again."}</p>
@@ -76,7 +76,7 @@ export default function ProfileSettingsPage() {
 
   if (meQuery.isLoading || !user) {
     return (
-      <main className="mx-auto w-full max-w-5xl px-3 py-6 sm:px-0 lg:py-10">
+      <main className="w-full px-3 py-6 sm:px-0 lg:py-10">
         <div className="flex min-h-[420px] items-center justify-center rounded-3xl border bg-card">
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading profile…</div>
         </div>
@@ -85,7 +85,7 @@ export default function ProfileSettingsPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-3 py-6 sm:px-0 lg:py-10">
+    <main className="w-full px-3 py-6 sm:px-0 lg:py-10">
       <div className="space-y-8">
         <header className="relative overflow-hidden rounded-[2rem] border bg-card px-6 py-7 shadow-sm sm:px-8 sm:py-9">
           <div className="pointer-events-none absolute -right-20 -top-28 size-72 rounded-full bg-blue-500/10 blur-3xl" />

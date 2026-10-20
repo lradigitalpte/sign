@@ -61,7 +61,7 @@ export default function RetentionPage() {
 
       <section className="rounded-3xl border bg-card p-5 shadow-sm sm:p-6">
         <div className="flex items-start gap-4">
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-subtle text-muted-foreground">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-300">
             <Trash2 className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
@@ -93,7 +93,7 @@ export default function RetentionPage() {
 
       <section className="rounded-3xl border bg-card p-5 shadow-sm sm:p-6">
         <div className="flex items-start gap-4">
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-subtle text-muted-foreground">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-300">
             <Lock className="size-4" />
           </span>
           <div className="min-w-0 flex-1">

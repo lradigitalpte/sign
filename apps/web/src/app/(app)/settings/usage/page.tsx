@@ -33,7 +33,7 @@ function Meter({ icon: Icon, title, used, limit, detail }: { icon: typeof Send; 
   const full = limit !== null && used >= limit;
   return (
     <section className="rounded-3xl border bg-card p-5 shadow-sm sm:p-6">
-      <div className="flex items-center gap-2 text-sm font-semibold"><Icon className="size-4 text-muted-foreground" />{title}</div>
+      <div className="flex items-center gap-2.5 text-sm font-semibold"><span className="grid size-8 place-items-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-300"><Icon className="size-4" /></span>{title}</div>
       <p className="mt-3 text-3xl font-semibold tracking-tight tabular-nums">
         {used}
         <span className="text-base font-normal text-muted-foreground">{limit === null ? "" : ` of ${limit}`}</span>
@@ -69,7 +69,7 @@ export default function UsagePage() {
       ) : (
         <>
           {!e.enforced ? (
-            <p className="rounded-2xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Plan limits aren&apos;t switched on for this workspace yet, so nothing below is blocked.</p>
+            <p className="rounded-2xl border border-blue-500/15 bg-blue-500/5 px-4 py-3 text-sm text-muted-foreground">Plan limits aren&apos;t switched on for this workspace yet, so nothing below is blocked.</p>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <Meter

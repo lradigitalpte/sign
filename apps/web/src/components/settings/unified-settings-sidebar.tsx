@@ -32,10 +32,6 @@ const SECTION_STYLE: Partial<Record<SettingsScope, { icon: typeof User; classNam
   team: { icon: UsersRound, className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" },
 };
 
-const SECTION_HINTS: Partial<Record<SettingsScope, (team: { name: string; isDefault: boolean } | undefined) => string>> = {
-  team: (team) => (team && !team.isDefault ? `${team.name}'s own settings, or the organisation's.` : "Every team uses these unless it customizes its own."),
-};
-
 export function UnifiedSettingsSidebar() {
   const pathname = usePathname();
   const me = useMe().data;
@@ -85,7 +81,7 @@ export function UnifiedSettingsSidebar() {
       <div className="space-y-5">
         {sections.map(({ scope, pages }) => (
           <section key={scope}>
-            <h3 className={cn("flex items-center gap-2 px-3 text-[10px] font-bold uppercase tracking-[.14em] text-muted-foreground/80", !SECTION_HINTS[scope] && "mb-1.5")}>
+            <h3 className="mb-1.5 flex items-center gap-2 px-3 text-[10px] font-bold uppercase tracking-[.14em] text-muted-foreground/80">
               {(() => {
                 const style = SECTION_STYLE[scope];
                 if (!style) return null;
@@ -94,7 +90,6 @@ export function UnifiedSettingsSidebar() {
               })()}
               <span className="min-w-0 truncate">{scopeLabel(scope, context)}</span>
             </h3>
-            {SECTION_HINTS[scope] ? <p className="mb-1.5 pl-10 pr-3 text-[11px] text-muted-foreground/80">{SECTION_HINTS[scope]?.(team)}</p> : null}
             <nav className="space-y-0.5">{pages.map((page) => <NavItem key={page.href} item={page} active={isActive(page)} />)}</nav>
           </section>
         ))}

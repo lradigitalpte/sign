@@ -94,7 +94,7 @@ export default function StorageSettingsPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-3 py-8 sm:px-0 lg:py-10">
+    <main className="w-full px-3 py-8 sm:px-0 lg:py-10">
       <PageHeader
         title="Document storage"
         description="Keep uploaded and signed PDFs in your own Amazon S3 or Cloudflare R2 bucket for stronger security and trust controls."
