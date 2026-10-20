@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,7 +19,13 @@ func NewPostgresStore(db *pgxpool.Pool) *PostgresStore { return &PostgresStore{d
 func (s *PostgresStore) Resolve(ctx context.Context, tokenHash []byte) (Session, error) {
 	var session Session
 	err := s.db.QueryRow(ctx, `
-SELECT e.id::text, e.title, e.status::text, e.language, e.expires_at,
+SELECT e.id::text, e.title,
+       CASE WHEN e.status = 'in_progress' AND e.expires_at <= now() THEN 'expired' ELSE e.status::text END,
+       e.language, e.expires_at, e.redirect_url,
+       CASE WHEN e.require_passcode THEN COALESCE(e.passcode, '') ELSE '' END,
+       t.passcode_verified_at IS NOT NULL
+         AND COALESCE(t.last_used_at, t.passcode_verified_at) > now() - make_interval(mins => GREATEST(e.session_timeout_minutes, 5)),
+       r.passcode_locked_until,
        r.id::text, r.name, r.email, r.role::text, r.status::text, r.private_message,
        o.name,
        COALESCE(b.config->>'logoDataUrl', ''),
@@ -29,9 +36,10 @@ FROM signing_tokens t
 JOIN recipients r ON r.id = t.recipient_id
 JOIN envelopes e ON e.id = r.envelope_id
 JOIN organizations o ON o.id = e.organization_id
-LEFT JOIN organization_settings b ON b.organization_id = e.organization_id AND b.section = 'branding'
+LEFT JOIN LATERAL (SELECT effective_settings(e.organization_id, e.team_id, 'branding') AS config) b ON true
 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now()`, tokenHash).Scan(
-		&session.Envelope.ID, &session.Envelope.Title, &session.Envelope.Status, &session.Envelope.Language, &session.Envelope.ExpiresAt,
+		&session.Envelope.ID, &session.Envelope.Title, &session.Envelope.Status, &session.Envelope.Language, &session.Envelope.ExpiresAt, &session.Envelope.RedirectURL,
+		&session.passcodeHash, &session.passcodeUnlocked, &session.passcodeLockedUntil,
 		&session.Recipient.ID, &session.Recipient.Name, &session.Recipient.Email, &session.Recipient.Role, &session.Recipient.Status, &session.Recipient.PrivateMessage,
 		&session.OrganizationName,
 		&session.OrganizationBrand.LogoDataURL, &session.OrganizationBrand.BrandName, &session.OrganizationBrand.PrimaryColor, &session.OrganizationBrand.HidePlatformBranding,
@@ -119,7 +127,10 @@ func (s *PostgresStore) MarkViewed(ctx context.Context, recipientID string, audi
 	}
 	_, err = s.db.Exec(ctx, `INSERT INTO audit_events(envelope_id, recipient_id, event_type, ip_address, user_agent)
 SELECT envelope_id, id, 'envelope.viewed', NULLIF($2,'')::inet, $3 FROM recipients WHERE id=$1::uuid`, recipientID, nullableInet(audit.IP), audit.UserAgent)
-	return err
+	if err != nil {
+		return err
+	}
+	return queueSenderNotice(ctx, s.db, recipientID, "sender_viewed")
 }
 
 func (s *PostgresStore) SaveField(ctx context.Context, recipientID, fieldID string, value json.RawMessage, placement *FieldPlacement) (Field, error) {
@@ -266,6 +277,9 @@ VALUES ($1::uuid,$2::uuid,$3,NULLIF($4,'')::inet,$5,'{}'::jsonb)`, envelopeID, r
 	if err != nil {
 		return err
 	}
+	if err := queueSenderNotice(ctx, tx, recipientID, "sender_signed"); err != nil {
+		return err
+	}
 	tag, err := tx.Exec(ctx, `
 UPDATE envelopes SET status='completed', completed_at=now(), updated_at=now()
 WHERE id=$1::uuid AND status='in_progress'
@@ -355,6 +369,74 @@ WHERE f.id=$1::uuid AND f.recipient_id=$2::uuid
 		return "", "", "", ErrUnavailable
 	}
 	return fieldType, envelopeID, orgID, err
+}
+
+type execer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+// queueSenderNotice emails the envelope's sender about a recipient's activity when the envelope asks for it.
+// Each notice goes once per recipient, senders are not notified about their own activity,
+// and only signers and approvers trigger "signed" notices.
+func queueSenderNotice(ctx context.Context, db execer, recipientID, kind string) error {
+	_, err := db.Exec(ctx, `
+INSERT INTO notification_jobs(envelope_id, recipient_id, kind, token_ciphertext)
+SELECT e.id, r.id, $2, ''::bytea
+FROM recipients r
+JOIN envelopes e ON e.id = r.envelope_id
+JOIN users u ON u.id = e.created_by
+WHERE r.id = $1::uuid
+  AND lower(u.email) <> lower(r.email)
+  AND NOT EXISTS (SELECT 1 FROM notification_jobs j WHERE j.recipient_id = r.id AND j.kind = $2)
+  AND CASE WHEN $2 = 'sender_viewed' THEN e.notify_on_view ELSE e.notify_on_sign AND r.role IN ('signer', 'approver') END`, recipientID, kind)
+	return err
+}
+
+const passcodeAttempts = 5
+
+func (s *PostgresStore) RecordPasscodeFailure(ctx context.Context, recipientID string, audit AuditContext) (*time.Time, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	var envelopeID string
+	var lockedUntil *time.Time
+	err = tx.QueryRow(ctx, `
+UPDATE recipients SET
+  passcode_locked_until = CASE WHEN passcode_failures + 1 >= $2 THEN now() + interval '15 minutes' ELSE passcode_locked_until END,
+  passcode_failures = CASE WHEN passcode_failures + 1 >= $2 THEN 0 ELSE passcode_failures + 1 END
+WHERE id = $1::uuid
+RETURNING envelope_id::text, CASE WHEN passcode_locked_until > now() THEN passcode_locked_until END`, recipientID, passcodeAttempts).Scan(&envelopeID, &lockedUntil)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO audit_events(envelope_id, recipient_id, event_type, ip_address, user_agent, metadata)
+VALUES ($1::uuid,$2::uuid,'recipient.passcode_failed',NULLIF($3,'')::inet,$4,jsonb_build_object('locked',$5::boolean))`, envelopeID, recipientID, nullableInet(audit.IP), audit.UserAgent, lockedUntil != nil)
+	if err != nil {
+		return nil, err
+	}
+	return lockedUntil, tx.Commit(ctx)
+}
+
+func (s *PostgresStore) MarkPasscodeVerified(ctx context.Context, tokenHash []byte, recipientID string, audit AuditContext) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE signing_tokens SET passcode_verified_at=now(), last_used_at=now() WHERE token_hash=$1`, tokenHash); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE recipients SET passcode_failures=0, passcode_locked_until=NULL WHERE id=$1::uuid`, recipientID); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO audit_events(envelope_id, recipient_id, event_type, ip_address, user_agent)
+SELECT envelope_id, id, 'recipient.passcode_verified', NULLIF($2,'')::inet, $3 FROM recipients WHERE id=$1::uuid`, recipientID, nullableInet(audit.IP), audit.UserAgent)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func nullableInet(value string) any {

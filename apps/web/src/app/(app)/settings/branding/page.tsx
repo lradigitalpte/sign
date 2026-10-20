@@ -1,11 +1,12 @@
 "use client";
 
 import { Check, ImageUp, Loader2, Save, ShieldCheck, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
+import { SettingsScopeBar, useScopedSettings, type ScopedSettings } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useUpdateWorkspaceSettings, useWorkspaceSettings } from "@/hooks/use-envelope-api";
+import type { WorkspaceSettings } from "@/lib/platform-api";
 
 const MAX_LOGO_WIDTH = 320;
 const MAX_LOGO_HEIGHT = 96;
@@ -32,27 +33,25 @@ function resizeImageToDataURL(file: File): Promise<string> {
   });
 }
 
-export default function BrandingSettingsPage() {
-  const query = useWorkspaceSettings("branding");
-  const mutation = useUpdateWorkspaceSettings("branding");
+type Brand = { logoDataUrl: string; brandName: string; primaryColor: string; hidePlatformBranding: boolean };
+
+function brandFrom(data: WorkspaceSettings): Brand {
+  return {
+    logoDataUrl: typeof data.logoDataUrl === "string" ? data.logoDataUrl : "",
+    brandName: typeof data.brandName === "string" ? data.brandName : "",
+    primaryColor: typeof data.primaryColor === "string" && data.primaryColor ? data.primaryColor : "#2563eb",
+    hidePlatformBranding: Boolean(data.hidePlatformBranding),
+  };
+}
+
+function BrandingForm({ scoped }: { scoped: ScopedSettings }) {
   const uploadRef = useRef<HTMLInputElement>(null);
-
-  const [logoDataUrl, setLogoDataUrl] = useState("");
-  const [brandName, setBrandName] = useState("");
-  const [primaryColor, setPrimaryColor] = useState("#2563eb");
-  const [hidePlatformBranding, setHidePlatformBranding] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  // Only unsaved changes live in state; the rest comes from the saved settings.
+  const [edits, setEdits] = useState<Partial<Brand> | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (query.data) {
-      setLogoDataUrl(typeof query.data.logoDataUrl === "string" ? query.data.logoDataUrl : "");
-      setBrandName(typeof query.data.brandName === "string" ? query.data.brandName : "");
-      setPrimaryColor(typeof query.data.primaryColor === "string" && query.data.primaryColor ? query.data.primaryColor : "#2563eb");
-      setHidePlatformBranding(Boolean(query.data.hidePlatformBranding));
-      setDirty(false);
-    }
-  }, [query.data]);
+  const brand: Brand = { ...brandFrom(scoped.data ?? {}), ...edits };
+  const dirty = edits !== null;
+  const change = (patch: Partial<Brand>) => setEdits((current) => ({ ...current, ...patch }));
 
   const handleUpload = async (file: File) => {
     setUploadError(null);
@@ -70,40 +69,31 @@ export default function BrandingSettingsPage() {
         setUploadError("That image is too complex to embed — try a simpler PNG/JPG or a smaller SVG.");
         return;
       }
-      setLogoDataUrl(dataUrl);
-      setDirty(true);
+      change({ logoDataUrl: dataUrl });
     } catch {
       setUploadError("Unable to process that image.");
     }
   };
 
   const save = async () => {
-    await mutation.mutateAsync({ logoDataUrl, brandName, primaryColor, hidePlatformBranding });
-    setDirty(false);
+    await scoped.save(brand);
+    setEdits(null);
   };
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-3 py-8 sm:px-0 lg:py-10">
-      <header className="flex flex-col justify-between gap-5 border-b pb-7 sm:flex-row sm:items-end">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[.16em] text-blue-600">Workspace settings</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">Branding</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Recipients see this logo and name on the pages and emails you send them — instead of a generic sender.
-          </p>
-        </div>
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
-          <ShieldCheck className="size-6" />
-        </div>
-      </header>
+    <>
+      <div className="mt-7">
+        <SettingsScopeBar scoped={scoped} label="branding" customizeWith={brand} />
+      </div>
 
-      {query.isLoading ? (
+      {scoped.isLoading ? (
         <div className="flex min-h-64 items-center justify-center text-sm text-muted-foreground">
           <Loader2 className="mr-2 size-4 animate-spin" /> Loading settings…
         </div>
       ) : (
         <section className="mt-7 overflow-hidden rounded-3xl border bg-card shadow-sm">
-          <div className="divide-y">
+          {/* Read-only until the user can edit this scope (workspace admins; team admins once the team is customized). */}
+          <fieldset disabled={!scoped.canEdit} className="divide-y disabled:opacity-70">
             <div className="grid gap-4 p-5 sm:grid-cols-[1fr_minmax(220px,320px)] sm:items-center sm:p-6">
               <div>
                 <h2 className="text-sm font-semibold">Logo</h2>
@@ -122,20 +112,20 @@ export default function BrandingSettingsPage() {
                     if (file) void handleUpload(file);
                   }}
                 />
-                {logoDataUrl ? (
+                {brand.logoDataUrl ? (
                   <div className="flex items-center gap-2">
                     <div className={"flex h-14 w-28 items-center justify-center rounded-xl border bg-[repeating-conic-gradient(#f3f4f6_0_25%,white_0_50%)] bg-[length:12px_12px] p-2"}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={logoDataUrl} alt="Logo preview" className="max-h-full max-w-full object-contain" />
+                      <img src={brand.logoDataUrl} alt="Logo preview" className="max-h-full max-w-full object-contain" />
                     </div>
-                    <Button type="button" size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => { setLogoDataUrl(""); setDirty(true); }}>
+                    <Button type="button" size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => change({ logoDataUrl: "" })}>
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
                 ) : null}
                 <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => uploadRef.current?.click()}>
                   <ImageUp className="size-4" />
-                  {logoDataUrl ? "Replace" : "Upload logo"}
+                  {brand.logoDataUrl ? "Replace" : "Upload logo"}
                 </Button>
               </div>
             </div>
@@ -145,7 +135,7 @@ export default function BrandingSettingsPage() {
                 <h2 className="text-sm font-semibold">Brand name</h2>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">Used as a text fallback wherever there&apos;s no room for the logo.</p>
               </div>
-              <Input value={brandName} placeholder="Your company" onChange={(event) => { setBrandName(event.target.value); setDirty(true); }} className="ml-auto" />
+              <Input value={brand.brandName} placeholder="Your company" onChange={(event) => change({ brandName: event.target.value })} className="ml-auto" />
             </div>
 
             <div className="grid gap-4 p-5 sm:grid-cols-[1fr_minmax(220px,320px)] sm:items-center sm:p-6">
@@ -156,11 +146,11 @@ export default function BrandingSettingsPage() {
               <div className="ml-auto flex items-center gap-2">
                 <input
                   type="color"
-                  value={/^#[0-9a-fA-F]{6}$/.test(primaryColor) ? primaryColor : "#2563eb"}
-                  onChange={(event) => { setPrimaryColor(event.target.value); setDirty(true); }}
+                  value={/^#[0-9a-fA-F]{6}$/.test(brand.primaryColor) ? brand.primaryColor : "#2563eb"}
+                  onChange={(event) => change({ primaryColor: event.target.value })}
                   className="size-9 cursor-pointer rounded-lg border bg-transparent p-1"
                 />
-                <Input value={primaryColor} onChange={(event) => { setPrimaryColor(event.target.value); setDirty(true); }} className="w-28" />
+                <Input value={brand.primaryColor} onChange={(event) => change({ primaryColor: event.target.value })} className="w-28" />
               </div>
             </div>
 
@@ -172,37 +162,60 @@ export default function BrandingSettingsPage() {
               <button
                 type="button"
                 role="switch"
-                aria-checked={hidePlatformBranding}
-                onClick={() => { setHidePlatformBranding((current) => !current); setDirty(true); }}
-                className={`relative ml-auto h-7 w-12 rounded-full transition ${hidePlatformBranding ? "bg-blue-600" : "bg-muted"}`}
+                aria-checked={brand.hidePlatformBranding}
+                onClick={() => change({ hidePlatformBranding: !brand.hidePlatformBranding })}
+                className={`relative ml-auto h-7 w-12 rounded-full transition ${brand.hidePlatformBranding ? "bg-blue-600" : "bg-muted"}`}
               >
-                <span className={`absolute top-1 size-5 rounded-full bg-white shadow-sm transition ${hidePlatformBranding ? "left-6" : "left-1"}`} />
+                <span className={`absolute top-1 size-5 rounded-full bg-white shadow-sm transition ${brand.hidePlatformBranding ? "left-6" : "left-1"}`} />
               </button>
             </div>
-          </div>
+          </fieldset>
 
           <footer className="flex flex-col gap-3 border-t bg-surface-subtle/60 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className={`text-sm ${mutation.isError ? "text-destructive" : "text-emerald-600"}`}>
-              {mutation.isError
-                ? mutation.error instanceof Error
-                  ? mutation.error.message
-                  : "Unable to save settings."
-                : mutation.isSuccess && !dirty
-                  ? (
-                    <span className="flex items-center gap-1.5">
-                      <Check className="size-4" /> Settings saved
-                    </span>
-                  )
-                  : dirty
-                    ? "You have unsaved changes."
-                    : "All changes are saved."}
+            <p className={`text-sm ${scoped.error ? "text-destructive" : "text-emerald-600"}`}>
+              {scoped.error ? (
+                scoped.error.message || "Unable to save settings."
+              ) : !scoped.canEdit ? (
+                <span className="text-muted-foreground">{scoped.scope === "team" ? "Customize this team to change its branding." : "Only workspace owners and admins can change this."}</span>
+              ) : scoped.saved && !dirty ? (
+                <span className="flex items-center gap-1.5">
+                  <Check className="size-4" /> Settings saved
+                </span>
+              ) : dirty ? (
+                "You have unsaved changes."
+              ) : (
+                "All changes are saved."
+              )}
             </p>
-            <Button disabled={!dirty || mutation.isPending} onClick={() => void save()}>
-              <Save /> {mutation.isPending ? "Saving…" : "Save changes"}
+            <Button disabled={!dirty || scoped.saving || !scoped.canEdit} onClick={() => void save()}>
+              <Save /> {scoped.saving ? "Saving…" : "Save changes"}
             </Button>
           </footer>
         </section>
       )}
+    </>
+  );
+}
+
+export default function BrandingSettingsPage() {
+  // The organization's branding, or the current team's (teams other than the default one can customize).
+  const scoped = useScopedSettings("branding");
+  return (
+    <main className="mx-auto w-full max-w-4xl px-3 py-8 sm:px-0 lg:py-10">
+      <header className="flex flex-col justify-between gap-5 border-b pb-7 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[.16em] text-blue-600">Team settings</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] sm:text-4xl">Branding</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Recipients see this logo and name on the pages and emails you send them — instead of a generic sender.
+          </p>
+        </div>
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
+          <ShieldCheck className="size-6" />
+        </div>
+      </header>
+      {/* A fresh form per scope and once loaded, so unsaved edits never carry over. */}
+      <BrandingForm key={`${scoped.scope}-${scoped.customized}-${scoped.isLoading}`} scoped={scoped} />
     </main>
   );
 }

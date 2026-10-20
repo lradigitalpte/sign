@@ -30,7 +30,7 @@ func TestLoadUsesDefaults(t *testing.T) {
 	if cfg.Environment != "development" {
 		t.Fatalf("Environment = %q", cfg.Environment)
 	}
-	if cfg.APIAddress != ":8080" {
+	if cfg.APIAddress != ":8085" {
 		t.Fatalf("APIAddress = %q", cfg.APIAddress)
 	}
 	if cfg.ShutdownTimeout != 10*time.Second {

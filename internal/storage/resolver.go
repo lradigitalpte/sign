@@ -97,6 +97,9 @@ func NewOrgResolver(db *pgxpool.Pool, platform ObjectStore, protector *securetok
 	}
 }
 
+// Platform is Signet's own bucket, used by every workspace without storage of its own.
+func (r *OrgResolver) Platform() ObjectStore { return r.platform }
+
 func (r *OrgResolver) For(ctx context.Context, organizationID string) (ObjectStore, error) {
 	organizationID = strings.TrimSpace(organizationID)
 	if organizationID == "" {

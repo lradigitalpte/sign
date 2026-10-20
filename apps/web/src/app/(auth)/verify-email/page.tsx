@@ -1,12 +1,7 @@
-import { MailCheck } from "lucide-react";
-import { getTranslations } from "next-intl/server";
-import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { AuthMessage } from "@/components/auth/auth-message";
-import { AuthShell } from "@/components/auth/auth-shell";
-import { Button } from "@/components/ui/button";
-
-export default async function VerifyEmailPage() {
-  const t = await getTranslations("Auth.verifyEmail");
-  return <AuthShell description={t("description")} title={t("title")}><AuthMessage description={t("message")} icon={MailCheck} title={t("checkInbox")} /><div className="mt-5 grid gap-2"><Button variant="outline">{t("resend")}</Button><Link className="text-center text-sm font-medium text-primary hover:underline" href="/signin">{t("back")}</Link></div></AuthShell>;
+// WorkOS AuthKit verifies email addresses inside its hosted flow (it emails a code and asks for it
+// before finishing sign-in or sign-up), so there is no local step. Send visitors back into that flow.
+export default function VerifyEmailPage() {
+  redirect("/auth/sign-in");
 }

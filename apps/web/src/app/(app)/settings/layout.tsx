@@ -12,7 +12,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main Settings Content Area */}
-      <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8 lg:px-10 lg:py-8">
+      <main className="min-w-0 flex-1 overflow-y-auto bg-gradient-to-b from-surface-subtle to-background px-4 py-6 sm:px-8 lg:px-10 lg:py-8">
         <div className="mx-auto max-w-4xl">
           <SettingsScopeBreadcrumb />
           {children}

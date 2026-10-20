@@ -14,7 +14,7 @@ func folderRoutes(service *folder.Service) func(chi.Router) {
 	return func(router chi.Router) {
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			session, _ := identity.SessionFromContext(r.Context())
-			values, err := service.List(r.Context(), session.Workspace.ID)
+			values, err := service.List(r.Context(), session.Team.ID)
 			if err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "unable to list folders"})
 				return
@@ -30,7 +30,7 @@ func folderRoutes(service *folder.Service) func(chi.Router) {
 				return
 			}
 			session, _ := identity.SessionFromContext(r.Context())
-			value, err := service.Create(r.Context(), session.Workspace.ID, session.User.ID, input)
+			value, err := service.Create(r.Context(), session.Team.ID, session.User.ID, input)
 			if errors.Is(err, folder.ErrConflict) {
 				writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 				return
@@ -50,7 +50,7 @@ func folderRoutes(service *folder.Service) func(chi.Router) {
 				return
 			}
 			session, _ := identity.SessionFromContext(r.Context())
-			value, err := service.Update(r.Context(), session.Workspace.ID, chi.URLParam(r, "folderID"), input)
+			value, err := service.Update(r.Context(), session.Team.ID, chi.URLParam(r, "folderID"), input)
 			if errors.Is(err, folder.ErrNotFound) {
 				writeJSON(w, http.StatusNotFound, map[string]string{"error": "folder not found"})
 				return
@@ -74,7 +74,7 @@ func folderRoutes(service *folder.Service) func(chi.Router) {
 				return
 			}
 			session, _ := identity.SessionFromContext(r.Context())
-			result, err := service.TransferEnvelopes(r.Context(), session.Workspace.ID, chi.URLParam(r, "folderID"), input)
+			result, err := service.TransferEnvelopes(r.Context(), session.Team.ID, chi.URLParam(r, "folderID"), input)
 			if errors.Is(err, folder.ErrNotFound) {
 				writeJSON(w, http.StatusNotFound, map[string]string{"error": "folder not found"})
 				return
@@ -91,7 +91,7 @@ func folderRoutes(service *folder.Service) func(chi.Router) {
 		})
 		router.Delete("/{folderID}", func(w http.ResponseWriter, r *http.Request) {
 			session, _ := identity.SessionFromContext(r.Context())
-			err := service.Delete(r.Context(), session.Workspace.ID, chi.URLParam(r, "folderID"))
+			err := service.Delete(r.Context(), session.Team.ID, chi.URLParam(r, "folderID"))
 			if errors.Is(err, folder.ErrNotFound) {
 				writeJSON(w, http.StatusNotFound, map[string]string{"error": "folder not found"})
 				return

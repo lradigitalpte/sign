@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: signing
       POSTGRES_PASSWORD: signing
     ports:
-      - "5432:5432"
+      - "5435:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U signing -d signing"]
       interval: 5s

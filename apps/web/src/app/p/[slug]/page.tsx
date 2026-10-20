@@ -1,7 +1,6 @@
-"use client";
+import { notFound } from "next/navigation";
 
-import { UnavailableFeature } from "@/components/shared/unavailable-feature";
-
-export default function Page() {
-  return <UnavailableFeature />;
+// Public organization profiles aren't built yet (Settings shows Public profile as coming soon).
+export default function PublicProfilePage() {
+  notFound();
 }

@@ -190,8 +190,8 @@
     "navigation": {
       "overview": "Vue d’ensemble",
       "inbox": "Boîte de réception",
-        "envelopes": "Enveloppes",
-        "selfSign": "Signer soi-même",
+      "envelopes": "Enveloppes",
+      "selfSign": "Signer soi-même",
       "signature": "Signature",
       "encrypt": "Chiffrer",
       "templates": "Modèles",
@@ -361,6 +361,7 @@
     "summaryLatest": "Dernière activité",
     "localSession": "Session locale",
     "systemActor": "Système · événement automatisé",
+    "supportActor": "Support Signet",
     "invitationsSent": "{count, plural, one {# invitation envoyée} other {# invitations envoyées}}",
     "groupedFinalized": "PDF complété régénéré ({count} fois)",
     "groupedViewed": "Document consulté à nouveau ({count} fois)",
@@ -372,12 +373,17 @@
         "completed": "Toutes les signatures collectées",
         "voided": "Enveloppe annulée",
         "advanced": "Ordre de signature avancé",
-        "reminded": "Rappels envoyés"
+        "reminded": "Rappels envoyés",
+        "expired": "Enveloppe expirée",
+        "extended": "Date d’expiration prolongée",
+        "support_viewed": "Document ouvert par le support Signet"
       },
       "recipient": {
         "completed": "Signataire a terminé",
         "approved": "Le destinataire a approuvé l’enveloppe",
-        "declined": "Signataire a refusé"
+        "declined": "Signataire a refusé",
+        "passcode_failed": "Code d'accès incorrect saisi",
+        "passcode_verified": "Code d'accès vérifié"
       },
       "document": {
         "finalized": "PDF complété généré"
@@ -385,6 +391,22 @@
       "invitation": {
         "delivered": "Invitation livrée",
         "failed": "Échec de l'invitation"
+      },
+      "reminder": {
+        "delivered": "Rappel envoyé",
+        "failed": "Échec de l'envoi du rappel"
+      },
+      "completion": {
+        "delivered": "E-mail de finalisation envoyé",
+        "failed": "Échec de l'e-mail de finalisation"
+      },
+      "sender_viewed": {
+        "delivered": "Expéditeur informé de l'ouverture du document",
+        "failed": "Échec de la notification de l'expéditeur"
+      },
+      "sender_signed": {
+        "delivered": "Expéditeur informé de la signature du destinataire",
+        "failed": "Échec de la notification de l'expéditeur"
       }
     },
     "events": {
@@ -397,7 +419,8 @@
       "signed": "Champs de signature adoptés et complétés"
     },
     "loading": "Chargement du journal d’audit…",
-    "empty": "Aucun événement d’audit pour le moment."
+    "empty": "Aucun événement d’audit pour le moment.",
+    "automatic": "Automatique"
   },
   "Templates": {
     "title": "Modèles",
@@ -664,7 +687,15 @@
       "invalid": "Le jeton de signature est invalide ou a été révoqué pour des raisons de sécurité."
     },
     "backHome": "Retour à l'accueil",
-    "loadError": "Impossible de charger cette session de signature."
+    "loadError": "Impossible de charger cette session de signature.",
+    "passcodeTitle": "Saisissez le code d'accès",
+    "passcodeDesc": "{organization} a protégé ce document par un code d'accès. Demandez-le à l'expéditeur si vous ne l'avez pas.",
+    "passcodeLabel": "Code d'accès",
+    "passcodeSubmit": "Ouvrir le document",
+    "passcodeIncorrect": "Ce code d'accès est incorrect. Vérifiez-le et réessayez.",
+    "passcodeLocked": "Trop de tentatives incorrectes. Réessayez dans 15 minutes.",
+    "expiredTitle": "Ce document a expiré",
+    "expiredDesc": "Il n'accepte plus de signatures depuis le {date}. Contactez l'expéditeur si vous devez encore signer."
   },
   "Organizations": {
     "title": "Organisations et Espaces de Travail",

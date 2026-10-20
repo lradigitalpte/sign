@@ -27,7 +27,7 @@ import { useState } from "react";
 
 const MAIN_NAV = [
   { href: "/settings/profile", label: "Profile", icon: User },
-  { href: "/settings/security", label: "Security & 2FA", icon: ShieldCheck },
+  { href: "/settings/security", label: "Security", icon: ShieldCheck },
   { href: "/settings/company", label: "Organization", icon: Building2 },
   { href: "/settings/branding", label: "Branding", icon: Palette },
   { href: "/settings/notifications", label: "Notifications", icon: Bell },
@@ -46,7 +46,7 @@ const ENTERPRISE_NAV = [
   { href: "/settings/verification", label: "ID Verification", icon: Fingerprint },
   { href: "/settings/audit", label: "Audit Log", icon: ClipboardList },
   { href: "/settings/developer-logs", label: "Dev Logs", icon: Terminal },
-  { href: "/settings/retention", label: "Legal Hold", icon: Archive },
+  { href: "/settings/retention", label: "Retention & legal hold", icon: Archive },
   { href: "/settings/storage", label: "Document Storage", icon: HardDrive },
   { href: "/settings/crypto-keys", label: "Crypto Keys", icon: KeyRound },
 ];

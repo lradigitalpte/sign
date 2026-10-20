@@ -4,28 +4,34 @@ Original electronic-signature platform built with a Next.js frontend and Go back
 
 ## Current applications
 
-- `apps/web` — Next.js frontend
-- `cmd/api` — Go REST API
+- `apps/web` — Next.js frontend for customers
+- `apps/admin` — Vite admin app for Signet staff (see `docs/admin-app-plan.md`)
+- `packages/ui` — design tokens and UI components shared by both apps
+- `cmd/api` — Go REST API (customer routes under `/v1`, admin routes under `/admin/v1`)
 - `cmd/worker` — Go background worker
+- `cmd/admin` — grant, revoke and list platform admins
 
 ## Run the web application
 
-From the repository root:
+The repository is an npm workspace: install once from the root, and both apps share one `node_modules`.
 
 ```powershell
+npm install
 Copy-Item apps/web/.env.example apps/web/.env.local
-pnpm dev:web
-```
-
-The root command delegates to the frontend's existing npm-managed package. Alternatively, run it directly:
-
-```powershell
-cd apps/web
-Copy-Item .env.example .env.local
-npm.cmd run dev
+npm run dev:web
 ```
 
 Open `http://localhost:3000`.
+
+## Run the admin app
+
+```powershell
+Copy-Item apps/admin/.env.example apps/admin/.env   # set VITE_WORKOS_CLIENT_ID
+go run ./cmd/admin grant --email you@company.com --role super_admin
+npm run dev:admin
+```
+
+Open `http://localhost:3010`. The user must have signed in to the web app once before they can be granted admin access. In the WorkOS dashboard, add the redirect URI `http://localhost:3010/callback`. In development the Vite server proxies WorkOS calls, so no CORS origin is needed; in production use a WorkOS custom auth domain (`VITE_WORKOS_API_HOSTNAME`).
 
 ## Configure authentication
 
@@ -57,7 +63,7 @@ docker compose up -d postgres minio mailpit
 Configure the current PowerShell session and start the API:
 
 ```powershell
-$env:DATABASE_URL = "postgres://signing:signing@localhost:5432/signing?sslmode=disable"
+$env:DATABASE_URL = "postgres://signing:signing@localhost:5435/signing?sslmode=disable"
 $env:WEB_ORIGIN = "http://localhost:3000"
 $env:WORKOS_CLIENT_ID = "client_replace_me"
 $env:WORKOS_ISSUER = "https://api.workos.com/"
@@ -69,7 +75,7 @@ go run ./cmd/migrate
 go run ./cmd/api
 ```
 
-The API listens on `http://localhost:8080` by default:
+The API listens on `http://localhost:8085` by default:
 
 - `GET /healthz` — process liveness
 - `GET /readyz` — database readiness
@@ -107,6 +113,7 @@ go build ./cmd/worker
 - `internal/config` — validated environment configuration
 - `internal/database` — PostgreSQL connection pool
 - `internal/httpapi` — routing, middleware, and health endpoints
+- `internal/admin` — platform admins, admin audit log, and the `/admin/v1` routes
 - `internal/send` — draft review, send validation, and invitation enqueueing
 - `internal/notify` — invitation job processing and retries
 - `internal/email` — SMTP/Resend delivery and the local development preview

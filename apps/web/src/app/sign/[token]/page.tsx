@@ -102,6 +102,16 @@ export default function RecipientDocumentReviewPage({ params }: { params: Promis
             ) : null}
           </div>
         </div>
+        {session.envelope.status === "expired" ? (
+          <div role="status" className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs">
+            <p className="font-semibold">{t("expiredTitle")}</p>
+            {session.envelope.expiresAt ? (
+              <p className="mt-1 text-muted-foreground">
+                {t("expiredDesc", { date: new Date(session.envelope.expiresAt).toLocaleDateString(undefined, { dateStyle: "long" }) })}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {session.recipient.privateMessage ? (
           <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-xs">
             <p className="font-semibold">{t("privateMessageTitle")}</p>

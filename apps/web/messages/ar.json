@@ -191,9 +191,9 @@
       "encrypt": "Encrypt",
       "overview": "نظرة عامة",
       "inbox": "الوارد",
-        "envelopes": "المغلفات",
-        "selfSign": "التوقيع الذاتي",
-        "signature": "التوقيع",
+      "envelopes": "المغلفات",
+      "selfSign": "التوقيع الذاتي",
+      "signature": "التوقيع",
       "templates": "القوالب",
       "members": "الأعضاء"
     }
@@ -366,6 +366,7 @@
     "summaryLatest": "أحدث نشاط",
     "localSession": "جلسة محلية",
     "systemActor": "النظام · حدث تلقائي",
+    "supportActor": "دعم Signet",
     "invitationsSent": "{count, plural, one {تم إرسال دعوة واحدة} other {تم إرسال # دعوات}}",
     "groupedFinalized": "أُعيد إنشاء ملف PDF المكتمل ({count} مرات)",
     "groupedViewed": "تمت معاينة المستند مرة أخرى ({count} مرات)",
@@ -377,12 +378,17 @@
         "completed": "تم جمع جميع التوقيعات",
         "voided": "تم إلغاء المغلف",
         "advanced": "تم تقديم ترتيب التوقيع",
-        "reminded": "تم إرسال رسائل التذكير"
+        "reminded": "تم إرسال رسائل التذكير",
+        "expired": "انتهت صلاحية المغلف",
+        "extended": "تم تمديد تاريخ انتهاء الصلاحية",
+        "support_viewed": "فتح دعم Signet المستند"
       },
       "recipient": {
         "completed": "أكمل المستلم التوقيع",
         "approved": "وافق المستلم على المغلف",
-        "declined": "رفض المستلم التوقيع"
+        "declined": "رفض المستلم التوقيع",
+        "passcode_failed": "تم إدخال رمز مرور غير صحيح",
+        "passcode_verified": "تم التحقق من رمز المرور"
       },
       "document": {
         "finalized": "تم إنشاء ملف PDF المكتمل"
@@ -390,6 +396,22 @@
       "invitation": {
         "delivered": "تم تسليم رسالة الدعوة",
         "failed": "فشل إرسال رسالة الدعوة"
+      },
+      "reminder": {
+        "delivered": "تم تسليم رسالة التذكير",
+        "failed": "فشل إرسال رسالة التذكير"
+      },
+      "completion": {
+        "delivered": "تم تسليم رسالة الإكمال",
+        "failed": "فشل إرسال رسالة الإكمال"
+      },
+      "sender_viewed": {
+        "delivered": "تم إبلاغ المرسل بفتح المستند",
+        "failed": "فشل إبلاغ المرسل"
+      },
+      "sender_signed": {
+        "delivered": "تم إبلاغ المرسل بتوقيع المستلم",
+        "failed": "فشل إبلاغ المرسل"
       }
     },
     "events": {
@@ -402,7 +424,8 @@
       "signed": "تم اعتماد حقول التوقيع وإكمالها"
     },
     "loading": "جارٍ تحميل سجل التدقيق…",
-    "empty": "لا توجد أحداث تدقيق بعد."
+    "empty": "لا توجد أحداث تدقيق بعد.",
+    "automatic": "تلقائي"
   },
   "Templates": {
     "title": "القوالب",
@@ -669,7 +692,15 @@
       "invalid": "رمز التوقيع غير صالح أو تم إبطاله لأسباب أمنية."
     },
     "backHome": "العودة للرئيسية",
-    "loadError": "تعذر تحميل جلسة التوقيع."
+    "loadError": "تعذر تحميل جلسة التوقيع.",
+    "passcodeTitle": "أدخل رمز المرور",
+    "passcodeDesc": "قامت {organization} بحماية هذا المستند برمز مرور. اطلبه من المرسل إذا لم يكن لديك.",
+    "passcodeLabel": "رمز المرور",
+    "passcodeSubmit": "فتح المستند",
+    "passcodeIncorrect": "رمز المرور غير صحيح. تحقق منه وحاول مرة أخرى.",
+    "passcodeLocked": "محاولات غير صحيحة كثيرة. حاول مرة أخرى بعد 15 دقيقة.",
+    "expiredTitle": "انتهت صلاحية هذا المستند",
+    "expiredDesc": "توقف عن قبول التوقيعات في {date}. تواصل مع المرسل إذا كنت لا تزال بحاجة إلى التوقيع."
   },
   "Organizations": {
     "title": "المنظمات ومساحات العمل",

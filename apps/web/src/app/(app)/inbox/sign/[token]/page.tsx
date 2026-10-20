@@ -3,6 +3,7 @@
 import { use } from "react";
 
 import { GuidedSigningSession } from "@/components/signing/guided-signing-session";
+import { SigningAccessGate } from "@/components/signing/signing-access-gate";
 
 export default function WorkspaceSigningPage({
   params,
@@ -13,5 +14,9 @@ export default function WorkspaceSigningPage({
 }) {
   const { token } = use(params);
   const { layout } = use(searchParams);
-  return <GuidedSigningSession token={token} variant="workspace" layoutMode={layout !== "0"} />;
+  return (
+    <SigningAccessGate token={token}>
+      <GuidedSigningSession token={token} variant="workspace" layoutMode={layout !== "0"} />
+    </SigningAccessGate>
+  );
 }

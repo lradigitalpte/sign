@@ -44,14 +44,16 @@ func (f *fakeStore) BulkVoid(context.Context, string, string, []string) (int64, 
 	return 0, nil
 }
 
-func TestCreateDefaultsAndScopesEnvelope(t *testing.T) {
+// The service trims the title and scopes the envelope; language, timezone and date format left empty
+// are filled by the store from the workspace's saved defaults (see defaults.go).
+func TestCreateTrimsAndScopesEnvelope(t *testing.T) {
 	store := &fakeStore{}
 	service := NewService(store)
-	value, err := service.Create(context.Background(), "org", "user", CreateInput{Title: " Agreement "})
+	value, err := service.Create(context.Background(), "org", "user", CreateInput{Title: " Agreement ", Language: "fr"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.Title != "Agreement" || store.organizationID != "org" || store.userID != "user" || store.created.Language != "en" || store.created.Timezone != "Etc/UTC" {
+	if value.Title != "Agreement" || store.organizationID != "org" || store.userID != "user" || store.created.Language != "fr" || store.created.Timezone != "" {
 		t.Fatalf("unexpected create: %#v %#v", value, store.created)
 	}
 }

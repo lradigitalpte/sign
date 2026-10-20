@@ -1,72 +1,36 @@
 "use client";
 
-import { Building2, ChevronRight, Shield, User, Users } from "lucide-react";
+import { Building2, ChevronRight, Clock3, User, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type ScopeConfig = {
-  scope: "organisation" | "team" | "account";
-  scopeLabel: string;
-  scopeIcon: typeof Building2;
-  pageTitle: string;
-};
+import { useMe } from "@/hooks/use-envelope-api";
+import { scopeLabel, settingsPageFor, type SettingsScope } from "@/lib/settings-sections";
 
-const PATH_MAP: Record<string, { scope: "organisation" | "team" | "account"; scopeLabel: string; pageTitle: string }> = {
-  // Organisation Scope
-  "/settings/company": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "General" },
-  "/settings/preferences": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "Preferences" },
-  "/settings/retention": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "Preferences & Retention" },
-  "/settings/verification": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "Email Domains & ID" },
-  "/settings/billing": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "Billing & Plans" },
-  "/settings/sso": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "SSO & SAML" },
-  "/settings/scim": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "SCIM Directory" },
-  "/settings/crypto-keys": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "Crypto Keys" },
-  "/settings/storage": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "Document Storage" },
-  "/settings/audit": { scope: "organisation", scopeLabel: "Organisation Settings", pageTitle: "Audit Log" },
+const ICONS: Record<SettingsScope, typeof Building2> = { account: User, organisation: Building2, team: UsersRound, soon: Clock3 };
 
-  // Team Scope
-  "/settings/teams": { scope: "team", scopeLabel: "Team Settings", pageTitle: "Teams" },
-  "/settings/groups": { scope: "team", scopeLabel: "Team Settings", pageTitle: "Member Groups" },
-  "/settings/branding": { scope: "team", scopeLabel: "Team Settings", pageTitle: "General & Branding" },
-  "/settings/notifications": { scope: "team", scopeLabel: "Team Settings", pageTitle: "Preferences & Notifications" },
-  "/settings/public-profile": { scope: "team", scopeLabel: "Team Settings", pageTitle: "Public Profile" },
-  "/settings/api-keys": { scope: "team", scopeLabel: "Team Settings", pageTitle: "API Tokens" },
-  "/settings/webhooks": { scope: "team", scopeLabel: "Team Settings", pageTitle: "Webhooks" },
-  "/settings/developer-logs": { scope: "team", scopeLabel: "Team Settings", pageTitle: "Developer Logs" },
-  "/settings/tags": { scope: "team", scopeLabel: "Team Settings", pageTitle: "Document Tags" },
-  "/settings/usage": { scope: "team", scopeLabel: "Team Settings", pageTitle: "Usage Analytics" },
-
-  // Account Scope
-  "/settings/profile": { scope: "account", scopeLabel: "Account Settings", pageTitle: "Profile" },
-  "/settings/security": { scope: "account", scopeLabel: "Account Settings", pageTitle: "Security & 2FA" },
-  "/settings/invoices": { scope: "account", scopeLabel: "Account Settings", pageTitle: "Invoices & Receipts" },
-};
-
+/** Settings › level › page, with the level named for this person (their organisation, their team). */
 export function SettingsScopeBreadcrumb() {
   const pathname = usePathname();
-
-  const config = PATH_MAP[pathname] || {
-    scope: pathname.includes("security") || pathname.includes("profile") ? "account" : "organisation",
-    scopeLabel: pathname.includes("security") || pathname.includes("profile") ? "Account Settings" : "Organisation Settings",
-    pageTitle: pathname.split("/").filter(Boolean).pop()?.replace(/-/g, " ") || "Settings",
-  };
-
-  const Icon = config.scope === "organisation" ? Building2 : config.scope === "team" ? Users : User;
+  const me = useMe().data;
+  const page = settingsPageFor(pathname);
+  // Pages not in the list (such as Billing's checkout step) belong to the organisation.
+  const scope: SettingsScope = page?.scope ?? "organisation";
+  const title = page?.label ?? (pathname.startsWith("/settings/billing/checkout") ? "Checkout" : pathname.split("/").filter(Boolean).pop()?.replace(/-/g, " ") || "Settings");
+  const Icon = ICONS[scope];
 
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground border-b border-border/50 pb-3">
-      <Link href="/settings/profile" className="hover:text-foreground transition-colors">
+    <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-border/50 pb-3 text-xs font-medium text-muted-foreground">
+      <Link href="/settings/profile" className="transition-colors hover:text-foreground">
         Settings
       </Link>
       <ChevronRight className="size-3.5 opacity-50" />
-      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5">
         <Icon className="size-3.5 text-primary" />
-        <span>{config.scopeLabel}</span>
+        <span>{scopeLabel(scope, { workspaceName: me?.workspace.name, teamName: me?.team?.name, teamIsDefault: me?.team?.isDefault })}</span>
       </span>
       <ChevronRight className="size-3.5 opacity-50" />
-      <span className="font-semibold text-foreground capitalize">
-        {config.pageTitle}
-      </span>
+      <span className="font-semibold capitalize text-foreground">{title}</span>
     </div>
   );
 }

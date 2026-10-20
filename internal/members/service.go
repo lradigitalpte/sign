@@ -75,6 +75,9 @@ type Service struct {
 func NewService(db *pgxpool.Pool) *Service { return &Service{db: db, logger: slog.Default()} }
 
 // WithMailer enables invitation emails. Without it invitations still work through the copied link.
+// Mailer is the email provider invitations go through, or nil when none is set up.
+func (s *Service) Mailer() email.Mailer { return s.mailer }
+
 func (s *Service) WithMailer(mailer email.Mailer, webOrigin string, logger *slog.Logger) *Service {
 	s.mailer = mailer
 	s.webOrigin = strings.TrimRight(webOrigin, "/")

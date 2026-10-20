@@ -190,8 +190,8 @@
     "navigation": {
       "overview": "Overview",
       "inbox": "Inbox",
-        "envelopes": "Envelopes",
-        "selfSign": "Self Sign",
+      "envelopes": "Envelopes",
+      "selfSign": "Self Sign",
       "signature": "Signature",
       "encrypt": "Encrypt",
       "templates": "Templates",
@@ -361,6 +361,7 @@
     "summaryLatest": "Latest activity",
     "localSession": "Local session",
     "systemActor": "System · automated event",
+    "supportActor": "Signet support",
     "invitationsSent": "{count, plural, one {# invitation sent} other {# invitations sent}}",
     "groupedFinalized": "Completed PDF regenerated ({count} times)",
     "groupedViewed": "Document viewed again ({count} times)",
@@ -372,12 +373,17 @@
         "completed": "All signatures collected",
         "voided": "Envelope voided",
         "advanced": "Signing order advanced",
-        "reminded": "Reminder emails sent"
+        "reminded": "Reminder emails sent",
+        "expired": "Envelope expired",
+        "extended": "Expiration date extended",
+        "support_viewed": "Document opened by Signet support"
       },
       "recipient": {
         "completed": "Recipient finished signing",
         "approved": "Recipient approved the envelope",
-        "declined": "Recipient declined to sign"
+        "declined": "Recipient declined to sign",
+        "passcode_failed": "Incorrect passcode entered",
+        "passcode_verified": "Passcode verified"
       },
       "document": {
         "finalized": "Completed PDF generated"
@@ -385,6 +391,22 @@
       "invitation": {
         "delivered": "Invitation email delivered",
         "failed": "Invitation email failed"
+      },
+      "reminder": {
+        "delivered": "Reminder email delivered",
+        "failed": "Reminder email failed"
+      },
+      "completion": {
+        "delivered": "Completion email delivered",
+        "failed": "Completion email failed"
+      },
+      "sender_viewed": {
+        "delivered": "Sender notified that the document was opened",
+        "failed": "Sender notification failed"
+      },
+      "sender_signed": {
+        "delivered": "Sender notified that the recipient signed",
+        "failed": "Sender notification failed"
       }
     },
     "events": {
@@ -397,7 +419,8 @@
       "signed": "Signature fields adopted and completed"
     },
     "loading": "Loading audit trail…",
-    "empty": "No audit events yet."
+    "empty": "No audit events yet.",
+    "automatic": "Automatic"
   },
   "Templates": {
     "title": "Templates",
@@ -664,7 +687,15 @@
       "invalid": "The signing token is invalid or has been revoked for security purposes."
     },
     "backHome": "Return to home",
-    "loadError": "Unable to load this signing session."
+    "loadError": "Unable to load this signing session.",
+    "passcodeTitle": "Enter the passcode",
+    "passcodeDesc": "{organization} protected this document with a passcode. Ask the sender if you don't have it.",
+    "passcodeLabel": "Passcode",
+    "passcodeSubmit": "Open document",
+    "passcodeIncorrect": "That passcode is incorrect. Check it and try again.",
+    "passcodeLocked": "Too many incorrect attempts. Try again in 15 minutes.",
+    "expiredTitle": "This document has expired",
+    "expiredDesc": "It stopped accepting signatures on {date}. Contact the sender if you still need to sign."
   },
   "Organizations": {
     "title": "Organizations & Workspaces",

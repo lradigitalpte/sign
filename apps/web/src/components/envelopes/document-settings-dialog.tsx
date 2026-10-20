@@ -140,6 +140,7 @@ export function DocumentSettingsDialog({ envelope, open, onOpenChange, onSuccess
 
   // Security
   const [requirePasscode, setRequirePasscode] = useState(false);
+  const [passcode, setPasscode] = useState("");
   const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState("60");
 
   const [isUpdating, setIsUpdating] = useState(false);
@@ -175,6 +176,7 @@ export function DocumentSettingsDialog({ envelope, open, onOpenChange, onSuccess
       setAttachCompletedPdf(envelope.attachCompletedPdf ?? true);
       setSessionTimeoutMinutes(envelope.sessionTimeoutMinutes != null ? String(envelope.sessionTimeoutMinutes) : "60");
       setRequirePasscode(envelope.requirePasscode ?? false);
+      setPasscode("");
       setError(null);
     }
   }, [envelope, open]);
@@ -196,6 +198,17 @@ export function DocumentSettingsDialog({ envelope, open, onOpenChange, onSuccess
   };
 
   const handleUpdate = async () => {
+    const newPasscode = passcode.trim();
+    if (requirePasscode && !envelope.hasPasscode && newPasscode.length < 4) {
+      setActiveTab("security");
+      setError("Enter a passcode of at least 4 characters, or turn off the passcode requirement.");
+      return;
+    }
+    if (newPasscode && newPasscode.length < 4) {
+      setActiveTab("security");
+      setError("Passcodes must be at least 4 characters.");
+      return;
+    }
     setIsUpdating(true);
     setError(null);
 
@@ -212,7 +225,8 @@ export function DocumentSettingsDialog({ envelope, open, onOpenChange, onSuccess
         allowedSignatureTypes: signatureTypes,
         distributionMethod,
         externalId: externalId.trim() || null,
-        redirectUrl: redirectUrl.trim() || null,
+        // An empty string clears a previously saved redirect.
+        redirectUrl: redirectUrl.trim(),
         autoReminders,
         firstReminderDays: parseInt(firstReminderDays, 10) || 3,
         repeatReminderDays: parseInt(repeatReminderDays, 10) || 2,
@@ -221,7 +235,9 @@ export function DocumentSettingsDialog({ envelope, open, onOpenChange, onSuccess
         attachCompletedPdf,
         sessionTimeoutMinutes: parseInt(sessionTimeoutMinutes, 10) || 60,
         requirePasscode,
+        ...(newPasscode ? { passcode: newPasscode } : {}),
         expiresAt,
+        clearExpiresAt: expiresAt === null,
       });
 
       await queryClient.invalidateQueries({ queryKey: ["envelope", envelope.id] });
@@ -670,6 +686,42 @@ export function DocumentSettingsDialog({ envelope, open, onOpenChange, onSuccess
                       </p>
                     </div>
 
+                    <label className="flex items-center justify-between rounded-2xl border p-4 bg-surface-subtle/50 cursor-pointer hover:bg-surface-subtle transition">
+                      <div>
+                        <p className="font-semibold text-foreground text-sm">Require a Passcode to Sign</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Recipients must enter this passcode before they can open the document. Share it with them separately, not in the invitation email.
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={requirePasscode}
+                        onChange={(e) => setRequirePasscode(e.target.checked)}
+                        className="size-5 accent-primary cursor-pointer rounded"
+                      />
+                    </label>
+
+                    {requirePasscode && (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="doc-passcode" className="text-xs font-semibold text-foreground">
+                          {envelope.hasPasscode ? "Change passcode" : "Passcode"}
+                        </Label>
+                        <Input
+                          id="doc-passcode"
+                          type="password"
+                          autoComplete="new-password"
+                          value={passcode}
+                          onChange={(e) => setPasscode(e.target.value)}
+                          placeholder={envelope.hasPasscode ? "Passcode is set. Enter a new one to change it" : "At least 4 characters"}
+                          maxLength={64}
+                          className="h-11 rounded-2xl text-xs px-3.5"
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Five wrong attempts lock the recipient out for 15 minutes. Passcodes are stored encrypted and can&apos;t be viewed later.
+                        </p>
+                      </div>
+                    )}
+
                     <div className="space-y-1.5">
                       <Label htmlFor="doc-timeout" className="text-xs font-semibold text-foreground">
                         Signing Session Timeout (minutes)
@@ -683,6 +735,11 @@ export function DocumentSettingsDialog({ envelope, open, onOpenChange, onSuccess
                         max={1440}
                         className="h-11 rounded-2xl text-xs px-3.5"
                       />
+                      {requirePasscode ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          After this many idle minutes, the recipient must enter the passcode again.
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </div>

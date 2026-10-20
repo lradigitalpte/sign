@@ -1,6 +1,6 @@
-import { getActiveWorkspaceId, switchWorkspace, WORKSPACE_HEADER, workspaceHeaders } from "@/lib/active-workspace";
+import { getActiveTeamId, getActiveWorkspaceId, switchTeam, switchWorkspace, TEAM_HEADER, WORKSPACE_HEADER, workspaceHeaders } from "@/lib/active-workspace";
 
-export const platformApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+export const platformApiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8085";
 
 export class ApiError extends Error {
   status: number;
@@ -49,6 +49,7 @@ export type Envelope = {
   attachCompletedPdf?: boolean;
   sessionTimeoutMinutes?: number;
   requirePasscode?: boolean;
+  hasPasscode?: boolean;
   expiresAt?: string;
   isTemplate: boolean;
   createdAt: string;
@@ -191,6 +192,10 @@ export async function platformRequest<T>(token: string, path: string, init: Requ
   if (workspaceId && !headers.has(WORKSPACE_HEADER)) {
     headers.set(WORKSPACE_HEADER, workspaceId);
   }
+  const teamId = getActiveTeamId();
+  if (teamId && !headers.has(TEAM_HEADER)) {
+    headers.set(TEAM_HEADER, teamId);
+  }
 
   const response = await fetch(`${platformApiUrl}${path}`, {
     ...init,
@@ -200,6 +205,25 @@ export async function platformRequest<T>(token: string, path: string, init: Requ
   if (response.status === 403 && payload.code === "workspace_forbidden" && typeof window !== "undefined") {
     // The user was removed from the stored workspace; fall back to their default one.
     switchWorkspace(undefined);
+  }
+  if (response.status === 403 && payload.code === "team_forbidden" && typeof window !== "undefined") {
+    // The team was deleted or the user was taken off it; fall back to the workspace's default team.
+    switchTeam(undefined);
+  }
+  if (
+    response.status === 403 &&
+    (payload.code === "account_suspended" || payload.code === "workspace_suspended") &&
+    typeof window !== "undefined" &&
+    !window.location.pathname.startsWith("/suspended")
+  ) {
+    // Signet staff suspended the account or this workspace; explain instead of showing a broken page.
+    // A full reload (not a router push) also drops every cached query from the suspended workspace.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign(`/suspended?type=${payload.code === "account_suspended" ? "account" : "workspace"}`);
+  }
+  if (response.status === 402 && typeof window !== "undefined") {
+    // A plan limit: PlanLimitDialog explains it the same way wherever it happened.
+    window.dispatchEvent(new CustomEvent<PlanLimit>(PLAN_LIMIT_EVENT, { detail: payload as PlanLimit }));
   }
   if (!response.ok) {
     throw new ApiError(response.status, typeof payload.error === "string" ? payload.error : "Request failed", payload);
@@ -442,15 +466,159 @@ export function sendEnvelope(token: string, envelopeId: string, idempotencyKey: 
 export type MeResponse = {
   user: { id: string; email: string; name: string; avatarDataUrl?: string };
   workspace: Workspace;
+  /** The team requests work in: its envelopes, templates and folders are the ones shown. */
+  team: CurrentTeam;
   permissions?: string[];
 };
 
+export type CurrentTeam = { id: string; name: string; isDefault: boolean; role?: string };
+
 export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
 
-export type Workspace = { id: string; name: string; slug: string; role: WorkspaceRole; personal: boolean };
+export type Workspace = { id: string; name: string; slug: string; role: WorkspaceRole; personal: boolean; suspended?: boolean };
 
 export function isWorkspaceManager(role?: string) {
   return role === "owner" || role === "admin";
+}
+
+/** The workspace's plan, set by Signet staff until a payment provider is connected. */
+export type Subscription = {
+  plan: "free" | "starter" | "business" | "premium" | "enterprise";
+  seats: number;
+  billingCycle: "monthly" | "annual" | null;
+  status: "trialing" | "active" | "past_due" | "canceled";
+  periodEndsAt: string | null;
+  /** What the workspace pays per seat per month (monthly equivalent on annual billing), in US cents. Null on Free or before a price is agreed. */
+  seatPriceCents: number | null;
+  /** True while the workspace pays through Stripe; plan changes then go through checkout or the Stripe portal. */
+  managedByStripe: boolean;
+  /** The subscription was canceled and ends at periodEndsAt. */
+  cancelAtPeriodEnd: boolean;
+  /** Members who can send: everyone except viewers. */
+  seatsUsed: number;
+};
+
+export function getSubscription(token: string) {
+  return platformRequest<Subscription>(token, "/v1/workspace/subscription");
+}
+
+/** Feature flags for the current workspace. A flag that doesn't exist is off. */
+export function getFeatureFlags(token: string) {
+  return platformRequest<{ flags: Record<string, boolean> }>(token, "/v1/features").then((body) => body.flags ?? {});
+}
+
+/** A banner Signet staff publish to customers. */
+export type Announcement = {
+  id: string;
+  title: string;
+  body: string;
+  severity: "info" | "warning" | "critical";
+  linkUrl: string | null;
+  linkLabel: string | null;
+  startsAt: string;
+  endsAt: string | null;
+};
+
+export function listAnnouncements(token: string) {
+  return platformRequest<{ data: Announcement[] }>(token, "/v1/announcements").then((body) => body.data ?? []);
+}
+
+/** Permission for Signet support to open this workspace's documents, read-only, for a limited time. */
+export type SupportAccessGrant = {
+  id: string;
+  grantedByName: string | null;
+  note: string | null;
+  expiresAt: string;
+  revokedAt: string | null;
+  revokedByName: string | null;
+  createdAt: string;
+  active: boolean;
+};
+
+export function getSupportAccess(token: string) {
+  return platformRequest<{ current: SupportAccessGrant | null; history: SupportAccessGrant[] }>(token, "/v1/workspace/support-access");
+}
+
+export function allowSupportAccess(token: string, hours: number, note: string) {
+  return platformRequest<SupportAccessGrant>(token, "/v1/workspace/support-access", { method: "POST", body: JSON.stringify({ hours, note }) });
+}
+
+export function revokeSupportAccess(token: string) {
+  return platformRequest<{ ok: boolean }>(token, "/v1/workspace/support-access", { method: "DELETE" });
+}
+
+export type WorkspaceDeletion = {
+  request: { id: string; status: "scheduled" | "failed"; scheduledFor: string; requestedByEmail: string; createdAt: string } | null;
+  legalHold: boolean;
+  graceDays: number;
+};
+
+export function getWorkspaceDeletion(token: string) {
+  return platformRequest<WorkspaceDeletion>(token, "/v1/workspace/deletion");
+}
+
+export function requestWorkspaceDeletion(token: string, confirmName: string) {
+  return platformRequest<WorkspaceDeletion["request"]>(token, "/v1/workspace/deletion", { method: "POST", body: JSON.stringify({ confirmName }) });
+}
+
+export function cancelWorkspaceDeletion(token: string) {
+  return platformRequest<unknown>(token, "/v1/workspace/deletion", { method: "DELETE" });
+}
+
+/** A plan limit the API refused an action for (HTTP 402). */
+export type PlanLimit = { code: "plan_required" | "seat_limit" | "send_limit"; error: string; feature?: string; requiredPlan?: string };
+
+export const PLAN_LIMIT_EVENT = "signet:plan-limit";
+
+/** What the workspace's plan allows. Nothing is blocked while `enforced` is false. */
+export type Entitlements = {
+  enforced: boolean;
+  plan: string;
+  seats: number;
+  seatsUsed: number;
+  pendingSeats: number;
+  monthlySendLimit: number | null;
+  sentThisMonth: number;
+  features: Record<string, boolean>;
+};
+
+export function getEntitlements(token: string) {
+  return platformRequest<Entitlements>(token, "/v1/workspace/entitlements");
+}
+
+export type AccountDeletion = {
+  request: { id: string; status: "scheduled" | "failed"; scheduledFor: string; createdAt: string } | null;
+  graceDays: number;
+};
+
+export function getAccountDeletion(token: string) {
+  return platformRequest<AccountDeletion>(token, "/v1/me/deletion");
+}
+
+export function requestAccountDeletion(token: string, confirmEmail: string) {
+  return platformRequest<AccountDeletion["request"]>(token, "/v1/me/deletion", { method: "POST", body: JSON.stringify({ confirmEmail }) });
+}
+
+export function cancelAccountDeletion(token: string) {
+  return platformRequest<unknown>(token, "/v1/me/deletion", { method: "DELETE" });
+}
+
+/** Downloads everything in the workspace as a zip (owners only). */
+export async function downloadWorkspaceExport(token: string) {
+  const headers = new Headers({ Authorization: `Bearer ${token}` });
+  for (const [name, value] of Object.entries(workspaceHeaders())) headers.set(name, value);
+  const response = await fetch(`${platformApiUrl}/v1/workspace/export`, { headers });
+  if (!response.ok) {
+    const payload = await readJson(response);
+    throw new ApiError(response.status, typeof payload.error === "string" ? payload.error : "Export failed", payload);
+  }
+  const filename = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? "signet-export.zip";
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export function listWorkspaces(token: string) {
@@ -591,13 +759,16 @@ export type OrganizationBrand = {
 export type SigningSession = {
   organizationName: string;
   organizationBrand: OrganizationBrand;
-  envelope: Pick<Envelope, "id" | "title" | "status" | "language"> & { expiresAt?: string };
+  envelope: Pick<Envelope, "id" | "title" | "status" | "language"> & { expiresAt?: string; redirectUrl?: string };
   recipient: Pick<EnvelopeRecipient, "id" | "name" | "email" | "role" | "status" | "privateMessage">;
   documents: Array<Pick<EnvelopeDocument, "id" | "filename" | "pageCount">>;
   fields: SigningField[];
   attachments: Array<Pick<EnvelopeAttachment, "id" | "kind" | "label" | "url" | "filename" | "mimeType" | "position">>;
   remainingRequired: number;
   canAct: boolean;
+  /** The sender requires a passcode; while `locked`, documents, fields and recipient details are withheld. */
+  passcodeRequired: boolean;
+  locked: boolean;
 };
 
 export function getMe(token: string) {
@@ -613,8 +784,17 @@ export function updateProfile(token: string, input: { name: string; avatarDataUr
 
 export type WorkspaceSettings = Record<string, string | boolean | number>;
 export type CollaborationSpace = { id: string; name: string; slug?: string; description?: string; memberCount: number; createdAt?: string };
-export function listTeams(token:string){return platformRequest<Collection<CollaborationSpace>>(token,"/v1/teams").then(x=>x.data??[])}
-export function createTeam(token:string,name:string){return platformRequest<CollaborationSpace>(token,"/v1/teams",{method:"POST",body:JSON.stringify({name})})}
+/** A team the user can use. The default team holds everyone in the workspace. */
+export type TeamSummary = CollaborationSpace & { slug: string; isDefault: boolean; envelopeCount: number; role: string; canManage: boolean; createdAt: string };
+export type TeamMember = { userId: string; name: string; email: string; role: string; addedAt: string };
+export function listTeams(token:string){return platformRequest<{ data: TeamSummary[]; canCreate: boolean }>(token,"/v1/teams").then(x=>x.data??[])}
+export function listTeamsWithPermissions(token: string) { return platformRequest<{ data: TeamSummary[]; canCreate: boolean }>(token, "/v1/teams"); }
+export function createTeam(token:string,name:string){return platformRequest<TeamSummary>(token,"/v1/teams",{method:"POST",body:JSON.stringify({name})})}
+export function renameTeam(token: string, id: string, name: string) { return platformRequest<TeamSummary>(token, `/v1/teams/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ name }) }); }
+export function deleteTeam(token: string, id: string) { return platformRequest<void>(token, `/v1/teams/${encodeURIComponent(id)}`, { method: "DELETE" }); }
+export function listTeamMembers(token: string, id: string) { return platformRequest<{ data: TeamMember[]; everyone: boolean }>(token, `/v1/teams/${encodeURIComponent(id)}/members`); }
+export function setTeamMember(token: string, id: string, userId: string, role: "admin" | "member") { return platformRequest<{ ok: boolean }>(token, `/v1/teams/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }); }
+export function removeTeamMember(token: string, id: string, userId: string) { return platformRequest<void>(token, `/v1/teams/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }); }
 export function listGroups(token:string){return platformRequest<Collection<CollaborationSpace>>(token,"/v1/groups").then(x=>x.data??[])}
 export function createGroup(token:string,name:string,description:string){return platformRequest<CollaborationSpace>(token,"/v1/groups",{method:"POST",body:JSON.stringify({name,description})})}
 
@@ -746,6 +926,7 @@ export function updateEnvelope(
     requirePasscode?: boolean;
     passcode?: string;
     expiresAt?: string | null;
+    clearExpiresAt?: boolean;
   },
 ) {
   return platformRequest<Envelope>(token, `/v1/envelopes/${envelopeId}`, {
@@ -800,6 +981,13 @@ export async function publicRequest<T>(path: string, init: RequestInit = {}): Pr
 
 export function getSigningSession(token: string) {
   return publicRequest<SigningSession>(`/v1/sign/${encodeURIComponent(token)}`);
+}
+
+export function verifySigningPasscode(token: string, passcode: string) {
+  return publicRequest<SigningSession>(`/v1/sign/${encodeURIComponent(token)}/passcode`, {
+    method: "POST",
+    body: JSON.stringify({ passcode }),
+  });
 }
 
 export function viewSigningSession(token: string) {
@@ -937,3 +1125,125 @@ export function languageLabel(code: string) {
   return labels[code] ?? code;
 }
 
+// ---- Billing (Stripe) ----
+
+export type BillingDetails = {
+  /** False until Stripe is configured on the server. */
+  enabled: boolean;
+  /** The workspace has a Stripe customer: it has paid online before. */
+  hasAccount: boolean;
+  paymentMethod: { brand: string; last4: string; expMonth: number; expYear: number } | null;
+  invoices: { id: string; number: string; status: string; amountCents: number; currency: string; createdAt: string; url: string; pdfUrl: string }[];
+};
+
+export type CheckoutInput = { plan: string; cycle: "monthly" | "annual"; seats: number };
+
+/** Either a Stripe Checkout URL to go to, or updated when an existing subscription was changed in place. */
+export type CheckoutResult = { url?: string; updated: boolean };
+
+export function getBillingDetails(token: string) {
+  return platformRequest<BillingDetails>(token, "/v1/billing/details");
+}
+
+export function startCheckout(token: string, input: CheckoutInput) {
+  return platformRequest<CheckoutResult>(token, "/v1/billing/checkout", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function openBillingPortal(token: string) {
+  return platformRequest<{ url: string }>(token, "/v1/billing/portal", { method: "POST" });
+}
+
+// ---- Account security (WorkOS) ----
+
+export type AccountSecurity = {
+  twoFactor: { enabled: boolean; factors: { id: string; type: string; createdAt: string }[] };
+  sessions: { id: string; ipAddress: string; userAgent: string; authMethod: string; createdAt: string; updatedAt: string; expiresAt: string; current: boolean }[];
+  /** False when the server can't send email, so no reset link can be sent. */
+  passwordResetEmail: boolean;
+};
+
+export function getAccountSecurity(token: string) {
+  return platformRequest<AccountSecurity>(token, "/v1/account/security/");
+}
+
+export function revokeSession(token: string, sessionId: string) {
+  return platformRequest<{ ok: boolean }>(token, `/v1/account/security/sessions/${encodeURIComponent(sessionId)}/revoke`, { method: "POST" });
+}
+
+export function revokeOtherSessions(token: string) {
+  return platformRequest<{ revoked: number }>(token, "/v1/account/security/sessions/revoke-others", { method: "POST" });
+}
+
+export function sendPasswordReset(token: string) {
+  return platformRequest<{ sentTo: string }>(token, "/v1/account/security/password-reset", { method: "POST" });
+}
+
+// ---- Workspace (Organization page) ----
+
+export type WorkspaceOverview = {
+  id: string;
+  name: string;
+  personal: boolean;
+  createdAt: string;
+  /** Renaming also renames the organization members sign in to (WorkOS). */
+  nameSyncsToWorkOS: boolean;
+};
+
+export function getWorkspaceOverview(token: string) {
+  return platformRequest<WorkspaceOverview>(token, "/v1/workspace");
+}
+
+export function renameWorkspace(token: string, name: string) {
+  return platformRequest<{ name: string; syncedToWorkOS: boolean }>(token, "/v1/workspace", { method: "PATCH", body: JSON.stringify({ name }) });
+}
+
+// ---- Team settings (Preferences, Notifications, Branding per team) ----
+
+export type TeamSettingsSection = "preferences" | "notifications" | "branding";
+
+export type TeamSettingsView = {
+  section: TeamSettingsSection;
+  team: CurrentTeam;
+  /** The workspace's settings, which every team uses unless it customizes its own. */
+  organization: WorkspaceSettings;
+  /** What this team changed. Empty when it uses the workspace's settings. */
+  overrides: WorkspaceSettings;
+  /** What applies to this team's envelopes. */
+  effective: WorkspaceSettings;
+  customized: boolean;
+  canEdit: boolean;
+};
+
+export function getTeamSettings(token: string, section: TeamSettingsSection) {
+  return platformRequest<TeamSettingsView>(token, `/v1/team/settings/${section}/`);
+}
+
+/** Saves the team's own values; null goes back to the workspace's settings. */
+export function updateTeamSettings(token: string, section: TeamSettingsSection, overrides: WorkspaceSettings | null) {
+  return platformRequest<TeamSettingsView>(token, `/v1/team/settings/${section}/`, { method: "PUT", body: JSON.stringify({ overrides }) });
+}
+
+// ---- Member groups (give access to teams) ----
+
+export type MemberGroup = {
+  id: string;
+  name: string;
+  description: string;
+  memberCount: number;
+  /** Teams this group is attached to, with the role its members get there. */
+  teams: { id: string; name: string; role: string }[];
+  createdAt: string;
+};
+
+export type TeamGroup = { id: string; name: string; role: string; memberCount: number; addedAt: string };
+
+export function listGroupDirectory(token: string) { return platformRequest<{ data: MemberGroup[]; canManage: boolean }>(token, "/v1/groups"); }
+export function createMemberGroup(token: string, name: string, description: string) { return platformRequest<MemberGroup>(token, "/v1/groups", { method: "POST", body: JSON.stringify({ name, description }) }); }
+export function updateMemberGroup(token: string, id: string, input: { name?: string; description?: string }) { return platformRequest<MemberGroup>(token, `/v1/groups/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) }); }
+export function deleteMemberGroup(token: string, id: string) { return platformRequest<void>(token, `/v1/groups/${encodeURIComponent(id)}`, { method: "DELETE" }); }
+export function listGroupMembers(token: string, id: string) { return platformRequest<{ data: TeamMember[] }>(token, `/v1/groups/${encodeURIComponent(id)}/members`); }
+export function addGroupMember(token: string, id: string, userId: string) { return platformRequest<{ ok: boolean }>(token, `/v1/groups/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: "PUT" }); }
+export function removeGroupMember(token: string, id: string, userId: string) { return platformRequest<void>(token, `/v1/groups/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }); }
+export function listTeamGroups(token: string, teamId: string) { return platformRequest<{ data: TeamGroup[] }>(token, `/v1/teams/${encodeURIComponent(teamId)}/groups`); }
+export function setTeamGroup(token: string, teamId: string, groupId: string, role: "admin" | "member") { return platformRequest<{ ok: boolean }>(token, `/v1/teams/${encodeURIComponent(teamId)}/groups/${encodeURIComponent(groupId)}`, { method: "PUT", body: JSON.stringify({ role }) }); }
+export function removeTeamGroup(token: string, teamId: string, groupId: string) { return platformRequest<void>(token, `/v1/teams/${encodeURIComponent(teamId)}/groups/${encodeURIComponent(groupId)}`, { method: "DELETE" }); }

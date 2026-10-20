@@ -79,14 +79,15 @@ func (d *Duplicator) Duplicate(ctx context.Context, organizationID, userID, sour
 		organization_id, created_by, title, language, timezone, date_format,
 		allowed_signature_types, distribution_method, external_id, redirect_url, email_subject, email_body,
 		auto_reminders, first_reminder_days, repeat_reminder_days, notify_on_view, notify_on_sign,
-		attach_completed_pdf, session_timeout_minutes, require_passcode, expires_at, is_template
+		attach_completed_pdf, session_timeout_minutes, require_passcode, expires_at, is_template, team_id
 	) VALUES (
-		$1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+		$1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
+		(SELECT team_id FROM envelopes WHERE id = $23::uuid)
 	) RETURNING `+columns,
 		organizationID, userID, title, source.Language, source.Timezone, source.DateFormat,
 		source.AllowedSignatureTypes, source.DistributionMethod, source.ExternalID, source.RedirectURL, source.EmailSubject, source.EmailBody,
 		source.AutoReminders, source.FirstReminderDays, source.RepeatReminderDays, source.NotifyOnView, source.NotifyOnSign,
-		source.AttachCompletedPDF, source.SessionTimeoutMinutes, source.RequirePasscode, source.ExpiresAt, asTemplate))
+		source.AttachCompletedPDF, source.SessionTimeoutMinutes, source.RequirePasscode, source.ExpiresAt, asTemplate, sourceID))
 	if err != nil {
 		return Envelope{}, err
 	}

@@ -1,0 +1,26 @@
+@import "tailwindcss";
+@import "@signet/ui/styles/theme.css";
+@import "@fontsource-variable/geist";
+
+/* Shared components live outside this app; let Tailwind see their classes. */
+@source "../../../packages/ui/src";
+
+:root {
+  /* The web app sets this through next/font; here it comes from @fontsource. */
+  --font-geist-sans: "Geist Variable";
+
+  /* Chart series: categorical slots 1–4, validated (CVD and contrast) against the light card surface.
+     Slots 3–4 fall below 3:1 contrast on white, so every chart using them labels each slot in text. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+}
+
+.dark {
+  /* Same hues stepped for the dark card surface (#171717); validated separately. */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+}

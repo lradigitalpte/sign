@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	platformauth "signing-platform/internal/auth"
 	"signing-platform/internal/attachment"
@@ -15,11 +16,13 @@ import (
 	"signing-platform/internal/email"
 	"signing-platform/internal/envelope"
 	"signing-platform/internal/field"
+	"signing-platform/internal/heartbeat"
 	"signing-platform/internal/finalize"
 	"signing-platform/internal/folder"
 	"signing-platform/internal/httpapi"
 	"signing-platform/internal/identity"
 	"signing-platform/internal/inbox"
+	"signing-platform/internal/lifecycle"
 	"signing-platform/internal/members"
 	"signing-platform/internal/notify"
 	"signing-platform/internal/recipient"
@@ -86,17 +89,7 @@ func main() {
 	fields := field.NewService(field.NewPostgresStore(db))
 	folders := folder.NewService(folder.NewPostgresStore(db))
 	signaturePreferences := signatureprefs.NewService(signatureprefs.NewPostgresStore(db), protector)
-	sender := send.NewService(send.NewPostgresStore(db), func() (send.Token, error) {
-		raw, hash, err := securetoken.Generate()
-		if err != nil {
-			return send.Token{}, err
-		}
-		ciphertext, err := protector.Encrypt([]byte(raw))
-		if err != nil {
-			return send.Token{}, err
-		}
-		return send.Token{Raw: raw, Hash: hash, Ciphertext: ciphertext}, nil
-	})
+	sender := send.NewService(send.NewPostgresStore(db), send.NewTokenGenerator(protector))
 	signer := signing.NewService(signing.NewPostgresStore(db), objectResolver).
 		WithFinalizer(finalizer).
 		WithCompleter(sender)
@@ -126,6 +119,18 @@ func main() {
 	}
 
 	// Deployments without a separate worker service can drain the email queue from the API process.
+	// Workspace deletions and retention need document storage, which only the API has. A database lock
+	// keeps it to one run at a time across API processes.
+	// Account deletion also removes the WorkOS login; directoryAdmin is nil when that isn't possible.
+	directoryAdmin, _ := users.Admin()
+	go lifecycle.New(db, objectResolver, logger).WithDirectory(directoryAdmin).Run(ctx, time.Hour)
+
+	roles := []string{"lifecycle"}
+	if cfg.EmbeddedWorker {
+		roles = append(roles, "email", "scheduler")
+	}
+	go heartbeat.RunInstance(ctx, db, "api", roles, logger)
+
 	// Jobs are claimed with SKIP LOCKED, so this is safe alongside cmd/worker.
 	if cfg.EmbeddedWorker {
 		var mailer email.Mailer
@@ -138,7 +143,9 @@ func main() {
 			logger.Error("EMBEDDED_WORKER requires RESEND_API_KEY or SMTP_HOST")
 			os.Exit(1)
 		}
-		processor := notify.NewProcessor(notify.NewPostgresStore(db), mailer, protector, cfg.SigningOrigin, logger)
+		processor := notify.NewProcessor(notify.NewPostgresStore(db), mailer, protector, cfg.SigningOrigin, logger).
+			WithMonitor(heartbeat.NewThrottled(db, heartbeat.JobEmailDelivery, heartbeat.Interval))
+		go send.NewScheduler(db, send.NewTokenGenerator(protector), logger).Run(ctx, time.Minute)
 		go func() {
 			logger.Info("embedded email worker started")
 			if err := processor.Run(ctx, 0); err != nil {

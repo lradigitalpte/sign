@@ -1,96 +1,79 @@
 "use client";
 
-import {
-  Archive, BarChart3, Bell, Building2, ChevronDown, CreditCard, FileText,
-  Fingerprint, Globe, HardDrive, KeyRound, Lock, Palette, Search, Settings2, ShieldCheck, Tag,
-  Terminal, User, Users, Webhook, X,
-} from "lucide-react";
+import { Building2, ChevronDown, Clock3, Search, User, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useState, type ComponentType } from "react";
+import { useState } from "react";
 
-import { useMe } from "@/hooks/use-envelope-api";
+import { useMe, useSubscription } from "@/hooks/use-envelope-api";
+import { getPlan } from "@/lib/plans";
+import { SETTINGS_PAGES, scopeLabel, type SettingsPage, type SettingsScope } from "@/lib/settings-sections";
 import { cn } from "@/lib/utils";
 
-type Item = { href: string; label: string; icon: ComponentType<{ className?: string }>; badge?: string };
-type Group = { label: string; items: Item[] };
-
-const GROUPS: Group[] = [
-  { label: "Account", items: [
-    { href: "/settings/profile", label: "Profile", icon: User },
-    { href: "/settings/security", label: "Security & 2FA", icon: ShieldCheck, badge: "Ready" },
-    { href: "/settings/invoices", label: "Invoices", icon: FileText },
-  ]},
-  { label: "Workspace", items: [
-    { href: "/settings/company", label: "Organization", icon: Building2 },
-    { href: "/settings/teams", label: "Teams", icon: Users },
-    { href: "/settings/groups", label: "Member groups", icon: Users },
-    { href: "/settings/preferences", label: "Preferences", icon: Settings2 },
-    { href: "/settings/branding", label: "Branding", icon: Palette },
-    { href: "/settings/notifications", label: "Notifications", icon: Bell },
-    { href: "/settings/public-profile", label: "Public profile", icon: Globe },
-    { href: "/settings/tags", label: "Document tags", icon: Tag },
-    { href: "/settings/usage", label: "Usage", icon: BarChart3 },
-    { href: "/settings/billing", label: "Billing & plan", icon: CreditCard, badge: "Free" },
-  ]},
-  { label: "Developer", items: [
-    { href: "/settings/api-keys", label: "API keys", icon: KeyRound },
-    { href: "/settings/webhooks", label: "Webhooks", icon: Webhook },
-    { href: "/settings/developer-logs", label: "Developer logs", icon: Terminal },
-  ]},
-];
-
-const ENTERPRISE: Item[] = [
-  { href: "/settings/sso", label: "SAML SSO", icon: Lock },
-  { href: "/settings/scim", label: "SCIM provisioning", icon: Users },
-  { href: "/settings/verification", label: "ID verification", icon: Fingerprint },
-  { href: "/settings/audit", label: "Audit log", icon: FileText },
-  { href: "/settings/retention", label: "Legal hold", icon: Archive },
-  { href: "/settings/storage", label: "Document storage", icon: HardDrive, badge: "BYOS" },
-  { href: "/settings/crypto-keys", label: "Crypto keys", icon: KeyRound },
-];
-
-function NavItem({ item, active }: { item: Item; active: boolean }) {
+function NavItem({ item, active }: { item: SettingsPage; active: boolean }) {
   const Icon = item.icon;
   return (
     <Link href={item.href} aria-current={active ? "page" : undefined} className={cn(
-      "group flex min-h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-medium transition-colors",
-      active
-        ? "bg-blue-600 text-white shadow-[0_8px_24px_-14px_rgba(37,99,235,.9)]"
-        : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+      "group flex h-9 items-center gap-2.5 rounded-xl px-3 text-sm font-medium transition-colors",
+      active ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      item.scope === "soon" && !active && "opacity-70",
     )}>
-      <Icon className={cn("size-4 shrink-0", active ? "text-blue-100" : "text-muted-foreground group-hover:text-foreground")} />
+      <Icon className="size-4 shrink-0" />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {item.badge && <span className={cn("rounded-md px-1.5 py-0.5 text-[9px] font-semibold", active ? "bg-white/15 text-white" : "bg-muted text-muted-foreground")}>{item.badge}</span>}
     </Link>
   );
 }
 
+// Each level has its own colour, used for its heading icon.
+const SECTION_STYLE: Partial<Record<SettingsScope, { icon: typeof User; className: string }>> = {
+  account: { icon: User, className: "bg-blue-500/10 text-blue-600 dark:text-blue-300" },
+  organisation: { icon: Building2, className: "bg-violet-500/10 text-violet-600 dark:text-violet-300" },
+  team: { icon: UsersRound, className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" },
+};
+
+const SECTION_HINTS: Partial<Record<SettingsScope, (team: { name: string; isDefault: boolean } | undefined) => string>> = {
+  team: (team) => (team && !team.isDefault ? `${team.name}'s own settings, or the organisation's.` : "Every team uses these unless it customizes its own."),
+};
+
 export function UnifiedSettingsSidebar() {
   const pathname = usePathname();
   const me = useMe().data;
+  const subscription = useSubscription().data;
+  const planName = getPlan(subscription?.plan ?? "")?.name ?? "Free";
+  const team = me?.team;
   const [query, setQuery] = useState("");
-  const [enterpriseOpen, setEnterpriseOpen] = useState(ENTERPRISE.some((item) => item.href === pathname));
+  const [soonOpen, setSoonOpen] = useState(SETTINGS_PAGES.some((page) => page.scope === "soon" && page.href === pathname));
   const normalized = query.trim().toLowerCase();
+  const context = { workspaceName: me?.workspace.name, teamName: team?.name, teamIsDefault: team?.isDefault };
 
-  const visibleGroups = useMemo(() => GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => !normalized || `${group.label} ${item.label}`.toLowerCase().includes(normalized)),
-  })).filter((group) => group.items.length), [normalized]);
-  const visibleEnterprise = ENTERPRISE.filter((item) => !normalized || `enterprise ${item.label}`.toLowerCase().includes(normalized));
+  const pagesIn = (scope: SettingsScope) =>
+    SETTINGS_PAGES.filter((page) => page.scope === scope && (!normalized || `${scopeLabel(scope, context)} ${page.label}`.toLowerCase().includes(normalized)))
+      .map((page) => (page.href === "/settings/billing" ? { ...page, badge: planName } : page));
+  const isActive = (page: SettingsPage) => pathname === page.href || (page.href === "/members" && pathname.startsWith("/members"));
+  const sections = (["account", "organisation", "team"] as const).map((scope) => ({ scope, pages: pagesIn(scope) })).filter((section) => section.pages.length);
+  const soon = pagesIn("soon");
 
   return (
     <div className="flex min-h-full flex-col" data-testid="unified-settings-sidebar">
       <div className="mb-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[.16em] text-muted-foreground">Settings</p>
-        <h2 className="mt-1 text-lg font-semibold tracking-[-.025em]">Workspace controls</h2>
+        <h2 className="text-lg font-semibold tracking-[-.025em]">Settings</h2>
       </div>
 
       <div className="mb-5 rounded-2xl border bg-gradient-to-br from-blue-50 to-card p-3.5 dark:from-blue-500/10 dark:to-card">
         <div className="flex items-center gap-3">
           <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">{(me?.workspace.name || "W").charAt(0).toUpperCase()}</div>
-          <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{me?.workspace.name || "Workspace"}</p><p className="mt-0.5 text-[11px] capitalize text-muted-foreground">{me?.workspace.role || "Member"} · Free plan</p></div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{me?.workspace.name || "Workspace"}</p>
+            <p className="mt-0.5 text-[11px] capitalize text-muted-foreground">{me?.workspace.role || "Member"} · {planName} plan</p>
+          </div>
         </div>
+        {team ? (
+          <p className="mt-2.5 flex items-center gap-1.5 border-t pt-2.5 text-xs text-muted-foreground">
+            <UsersRound className="size-3.5 shrink-0" />
+            <span className="truncate">Working in <span className="font-semibold text-foreground">{team.name}</span>{team.isDefault ? " (default team)" : ""}</span>
+          </p>
+        ) : null}
       </div>
 
       <div className="relative mb-5">
@@ -100,19 +83,32 @@ export function UnifiedSettingsSidebar() {
       </div>
 
       <div className="space-y-5">
-        {visibleGroups.map((group) => <section key={group.label}>
-          <h3 className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[.14em] text-muted-foreground/80">{group.label}</h3>
-          <nav className="space-y-0.5">{group.items.map((item) => <NavItem key={item.href} item={item} active={pathname === item.href} />)}</nav>
-        </section>)}
+        {sections.map(({ scope, pages }) => (
+          <section key={scope}>
+            <h3 className={cn("flex items-center gap-2 px-3 text-[10px] font-bold uppercase tracking-[.14em] text-muted-foreground/80", !SECTION_HINTS[scope] && "mb-1.5")}>
+              {(() => {
+                const style = SECTION_STYLE[scope];
+                if (!style) return null;
+                const Icon = style.icon;
+                return <span className={cn("grid size-5 shrink-0 place-items-center rounded-md", style.className)}><Icon className="size-3" /></span>;
+              })()}
+              <span className="min-w-0 truncate">{scopeLabel(scope, context)}</span>
+            </h3>
+            {SECTION_HINTS[scope] ? <p className="mb-1.5 pl-10 pr-3 text-[11px] text-muted-foreground/80">{SECTION_HINTS[scope]?.(team)}</p> : null}
+            <nav className="space-y-0.5">{pages.map((page) => <NavItem key={page.href} item={page} active={isActive(page)} />)}</nav>
+          </section>
+        ))}
 
-        {visibleEnterprise.length > 0 && <section className="border-t pt-4">
-          <button type="button" onClick={() => setEnterpriseOpen((open) => !open)} className="mb-1 flex w-full items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-[.14em] text-muted-foreground hover:text-foreground">
-            <ShieldCheck className="size-3.5" /><span className="flex-1 text-left">Enterprise</span><ChevronDown className={cn("size-3.5 transition-transform", (enterpriseOpen || normalized) && "rotate-180")} />
-          </button>
-          {(enterpriseOpen || Boolean(normalized)) && <nav className="space-y-0.5">{visibleEnterprise.map((item) => <NavItem key={item.href} item={item} active={pathname === item.href} />)}</nav>}
-        </section>}
+        {soon.length > 0 && (
+          <section className="border-t pt-4">
+            <button type="button" onClick={() => setSoonOpen((open) => !open)} aria-expanded={soonOpen || Boolean(normalized)} className="mb-1 flex w-full items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-[.14em] text-muted-foreground hover:text-foreground">
+              <Clock3 className="size-3.5" /><span className="flex-1 text-left">Coming soon</span><span className="font-medium normal-case tracking-normal">{soon.length}</span><ChevronDown className={cn("size-3.5 transition-transform", (soonOpen || normalized) && "rotate-180")} />
+            </button>
+            {(soonOpen || Boolean(normalized)) && <nav className="space-y-0.5">{soon.map((page) => <NavItem key={page.href} item={page} active={isActive(page)} />)}</nav>}
+          </section>
+        )}
 
-        {visibleGroups.length === 0 && visibleEnterprise.length === 0 && <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No settings match “{query}”.</div>}
+        {sections.length === 0 && soon.length === 0 && <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No settings match “{query}”.</div>}
       </div>
     </div>
   );

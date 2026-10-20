@@ -31,6 +31,8 @@ type Invitation struct {
 	RecipientRole  string
 	PrivateMessage *string
 	ExpiresAt      time.Time
+	SenderName     string
+	SenderEmail    string
 	Branding       email.Branding
 }
 
@@ -66,7 +68,7 @@ func Retryable(err error, attempts int) bool {
 
 func jobKind(kind string) string {
 	switch kind {
-	case "reminder", "completion":
+	case "reminder", "completion", "sender_viewed", "sender_signed":
 		return kind
 	default:
 		return "invitation"

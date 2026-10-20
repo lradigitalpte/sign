@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["pdfjs-dist"],
+  transpilePackages: ["pdfjs-dist", "@signet/ui"],
   // pdfjs optionally pulls in node-canvas; stub it out for the browser.
   turbopack: {
     resolveAlias: {

@@ -38,11 +38,15 @@ type Workspace struct {
 	Slug     string `json:"slug"`
 	Role     string `json:"role"`
 	Personal bool   `json:"personal"`
+	// Suspended is set by Signet staff; members can't use the workspace until it is restored.
+	Suspended bool `json:"suspended,omitempty"`
 }
 
 type Session struct {
 	User      User      `json:"user"`
 	Workspace Workspace `json:"workspace"`
+	// Team is the team in the workspace this request works in; envelopes, templates and folders belong to it.
+	Team Team `json:"team"`
 }
 
 type User struct {
@@ -83,6 +87,7 @@ type Service struct {
 	directory  Directory
 	store      Store
 	workspaces WorkspaceStore
+	teams      TeamStore
 }
 
 func NewService(directory Directory, store Store) *Service {
@@ -92,6 +97,9 @@ func NewService(directory Directory, store Store) *Service {
 // WithWorkspaces enables switching the active workspace per request and listing a user's workspaces.
 func (s *Service) WithWorkspaces(workspaces WorkspaceStore) *Service {
 	s.workspaces = workspaces
+	if teams, ok := workspaces.(TeamStore); ok {
+		s.teams = teams
+	}
 	return s
 }
 

@@ -46,6 +46,9 @@ export function auditEventTone(eventType: string): AuditTone {
   if (eventType.endsWith(".failed") || eventType.includes("declined") || eventType.includes("voided")) {
     return "danger";
   }
+  if (eventType.includes("expired") || eventType.includes("passcode_failed")) {
+    return "warning";
+  }
   if (eventType.includes("completed") || eventType.endsWith(".delivered")) {
     return "success";
   }

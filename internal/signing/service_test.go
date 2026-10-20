@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"testing"
+	"time"
 
 	"signing-platform/internal/storage"
 )
@@ -27,6 +28,12 @@ func (f *fakeStore) CreateField(context.Context, string, FieldCreateInput) (Fiel
 	return Field{}, nil
 }
 func (f *fakeStore) DeleteField(context.Context, string, string) error { return nil }
+func (f *fakeStore) RecordPasscodeFailure(context.Context, string, AuditContext) (*time.Time, error) {
+	return nil, nil
+}
+func (f *fakeStore) MarkPasscodeVerified(context.Context, []byte, string, AuditContext) error {
+	return nil
+}
 func (f *fakeStore) Complete(context.Context, string, AuditContext) error { return nil }
 func (f *fakeStore) Decline(context.Context, string, string, AuditContext) error {
 	return nil

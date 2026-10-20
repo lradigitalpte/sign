@@ -1,5 +1,9 @@
-import { SignInPage } from "@/components/ui/sign-in-flow-1";
+import type { Metadata } from "next";
 
-export default function SignInRoute() {
-  return <SignInPage />;
+import { AuthEntryPage, type AuthEntrySearchParams } from "@/components/auth/auth-entry-page";
+
+export const metadata: Metadata = { title: { absolute: "Sign in · Signet" } };
+
+export default function SignInRoute({ searchParams }: { searchParams: AuthEntrySearchParams }) {
+  return <AuthEntryPage mode="signin" searchParams={searchParams} />;
 }

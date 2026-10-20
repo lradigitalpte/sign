@@ -3,21 +3,17 @@
 import {
   Building2,
   Check,
-  ChevronDown,
   ChevronsUpDown,
   CreditCard,
-  Globe,
   Inbox,
   LogOut,
   Plus,
   Settings,
-  Shield,
   User,
   Users,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -38,8 +34,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useMe, usePlatformToken, useWorkspaces } from "@/hooks/use-envelope-api";
-import { switchWorkspace } from "@/lib/active-workspace";
+import { useCreateTeam, useEntitlements, useMe, usePlatformToken, useTeamDirectory, useWorkspaces } from "@/hooks/use-envelope-api";
+import { switchTeam, switchWorkspace } from "@/lib/active-workspace";
 import { ApiError, createWorkspace, initialsFor } from "@/lib/platform-api";
 
 type OrgMenuSwitcherProps = {
@@ -50,14 +46,20 @@ type OrgMenuSwitcherProps = {
 
 export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwitcherProps) {
   const t = useTranslations("AppShell");
-  const router = useRouter();
-  const pathname = usePathname();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTeam, setActiveTeam] = useState("Personal Team");
   const { getAccessToken } = usePlatformToken();
-  const activeWorkspaceId = useMe().data?.workspace.id;
+  const me = useMe().data;
+  const activeWorkspaceId = me?.workspace.id;
+  const currentTeam = me?.team;
   const workspaces = useWorkspaces().data ?? [];
+  // Teams own the envelopes, templates and folders shown in the app; the default team holds everyone.
+  const teamDirectory = useTeamDirectory().data;
+  const teams = teamDirectory?.data ?? [];
+  const createTeam = useCreateTeam();
+  // Extra teams are a Business feature once plan limits are on; the API refuses them otherwise.
+  const entitlements = useEntitlements().data;
+  const teamsLocked = Boolean(entitlements?.enforced && entitlements.features.teams_and_groups === false);
 
   // Create Org Modal
   const [isCreateOrgOpen, setIsCreateOrgOpen] = useState(false);
@@ -68,10 +70,6 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
   // Create Team Modal
   const [isCreateTeamOpen, setIsCreateTeamOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
-
-  const [teamList, setTeamList] = useState<string[]>([
-    "Personal Team",
-  ]);
 
   const initials = initialsFor(userName || userEmail || "?");
 
@@ -97,12 +95,8 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
     e.preventDefault();
     const trimmed = newTeamName.trim();
     if (!trimmed) return;
-    if (!teamList.includes(trimmed)) {
-      setTeamList((prev) => [...prev, trimmed]);
-    }
-    setActiveTeam(trimmed);
-    setNewTeamName("");
-    setIsCreateTeamOpen(false);
+    // Land on the team's settings so its creator can add people straight away.
+    createTeam.mutate(trimmed, { onSuccess: (created) => switchTeam(created.id, "/settings/teams") });
   };
 
   return (
@@ -118,8 +112,9 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
                 {initials}
               </AvatarFallback>
             </Avatar>
-            <span className="hidden sm:inline-block max-w-[110px] truncate text-left font-medium">
+            <span className="hidden sm:inline-block max-w-[160px] truncate text-left font-medium">
               {companyName}
+              {currentTeam && !currentTeam.isDefault ? <span className="text-muted-foreground"> / {currentTeam.name}</span> : null}
             </span>
             <ChevronsUpDown className="size-3.5 text-muted-foreground shrink-0" />
           </button>
@@ -186,14 +181,15 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
                 <span>Teams</span>
               </div>
               <div className="flex-1 space-y-1 py-1 max-h-48 overflow-y-auto">
-                {teamList.map((team) => {
-                  const isSelected = activeTeam === team;
+                {teams.map((team) => {
+                  const isSelected = currentTeam?.id === team.id;
                   return (
                     <DropdownMenuItem
-                      key={team}
+                      key={team.id}
                       onClick={() => {
-                        setActiveTeam(team);
                         setIsOpen(false);
+                        // The default team is what the API uses when none is chosen.
+                        if (!isSelected) switchTeam(team.isDefault ? undefined : team.id);
                       }}
                       className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium cursor-pointer transition ${
                         isSelected
@@ -201,7 +197,12 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
                           : "text-foreground hover:bg-muted"
                       }`}
                     >
-                      <span className="truncate">{team}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate">{team.name}</span>
+                        <span className="block text-[10px] font-normal text-muted-foreground">
+                          {team.isDefault ? "Everyone" : `${team.memberCount} ${team.memberCount === 1 ? "member" : "members"}`}
+                        </span>
+                      </span>
                       {isSelected && <Check className="size-3.5 text-blue-500 shrink-0 ml-1" />}
                     </DropdownMenuItem>
                   );
@@ -209,17 +210,33 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
               </div>
 
               <div className="pt-2 mt-auto border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOpen(false);
-                    setIsCreateTeamOpen(true);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
-                >
-                  <Plus className="size-3.5 text-blue-500" />
-                  <span>Create Team</span>
-                </button>
+                {teamDirectory?.canCreate && teamsLocked ? (
+                  <DropdownMenuItem asChild>
+                    <Link href="/checkout/business" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer">
+                      <Plus className="size-3.5 text-blue-500" />
+                      <span>More teams with Business</span>
+                    </Link>
+                  </DropdownMenuItem>
+                ) : teamDirectory?.canCreate ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      createTeam.reset();
+                      setIsCreateTeamOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
+                  >
+                    <Plus className="size-3.5 text-blue-500" />
+                    <span>Create Team</span>
+                  </button>
+                ) : null}
+                <DropdownMenuItem asChild>
+                  <Link href="/settings/teams" onClick={() => setIsOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer">
+                    <Settings className="size-3.5" />
+                    <span>Manage teams</span>
+                  </Link>
+                </DropdownMenuItem>
               </div>
             </div>
 
@@ -356,11 +373,12 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
               Create Team
             </DialogTitle>
             <DialogDescription>
-              Create a dedicated department or project team within {companyName}.
+              A team has its own envelopes, templates and folders inside {companyName}. Workspace owners and admins see every team; other people only see the teams they&apos;re on.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleCreateTeam} className="space-y-4 py-2">
+            {createTeam.error ? <p role="alert" className="text-xs text-destructive">{createTeam.error instanceof Error ? createTeam.error.message : "Couldn't create the team."}</p> : null}
             <div className="space-y-2">
               <Label htmlFor="team-name">Team name</Label>
               <Input
@@ -381,7 +399,7 @@ export function OrgMenuSwitcher({ companyName, userName, userEmail }: OrgMenuSwi
               >
                 Cancel
               </Button>
-              <Button type="submit">Create Team</Button>
+              <Button type="submit" disabled={createTeam.isPending}>{createTeam.isPending ? "Creating…" : "Create Team"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

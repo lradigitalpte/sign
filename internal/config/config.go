@@ -14,12 +14,14 @@ type Config struct {
 	Environment         string
 	APIAddress          string
 	WebOrigin           string
+	AdminOrigin         string
 	SigningOrigin       string
 	DatabaseURL         string
 	WorkOSClientID      string
 	WorkOSAPIKey        string
 	WorkOSIssuer        string
 	WorkOSJWKSURL       string
+	WorkOSWebhookSecret string // verifies POST /webhooks/workos; empty turns the endpoint off
 	StorageEndpoint     string
 	StorageAccessKey    string
 	StorageSecretKey    string
@@ -34,7 +36,10 @@ type Config struct {
 	EmailPreviewAddress string
 	EmailPreviewDir     string
 	EmbeddedWorker      bool
-	ShutdownTimeout    time.Duration
+	// Stripe takes payments for paid plans. Without a secret key, checkout is unavailable.
+	StripeSecretKey     string
+	StripeWebhookSecret string // verifies POST /webhooks/stripe
+	ShutdownTimeout     time.Duration
 	ReadTimeout         time.Duration
 	WriteTimeout        time.Duration
 	IdleTimeout         time.Duration
@@ -46,12 +51,14 @@ func Load() (Config, error) {
 		Environment:         os.Getenv("APP_ENV"),
 		APIAddress:          os.Getenv("API_ADDRESS"),
 		WebOrigin:           os.Getenv("WEB_ORIGIN"),
+		AdminOrigin:         os.Getenv("ADMIN_ORIGIN"),
 		SigningOrigin:       os.Getenv("SIGNING_ORIGIN"),
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
 		WorkOSClientID:      os.Getenv("WORKOS_CLIENT_ID"),
 		WorkOSAPIKey:        os.Getenv("WORKOS_API_KEY"),
 		WorkOSIssuer:        os.Getenv("WORKOS_ISSUER"),
 		WorkOSJWKSURL:       os.Getenv("WORKOS_JWKS_URL"),
+		WorkOSWebhookSecret: os.Getenv("WORKOS_WEBHOOK_SECRET"),
 		StorageEndpoint:     os.Getenv("STORAGE_ENDPOINT"),
 		StorageAccessKey:    os.Getenv("STORAGE_ACCESS_KEY"),
 		StorageSecretKey:    os.Getenv("STORAGE_SECRET_KEY"),
@@ -63,16 +70,21 @@ func Load() (Config, error) {
 		ResendFrom:          os.Getenv("RESEND_FROM"),
 		EmailPreviewAddress: os.Getenv("EMAIL_PREVIEW_ADDRESS"),
 		EmailPreviewDir:     os.Getenv("EMAIL_PREVIEW_DIR"),
+		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
+		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 	}
 
 	if cfg.Environment == "" {
 		cfg.Environment = "development"
 	}
 	if cfg.APIAddress == "" {
-		cfg.APIAddress = ":8080"
+		cfg.APIAddress = ":8085"
 	}
 	if cfg.WebOrigin == "" {
 		cfg.WebOrigin = "http://localhost:3000"
+	}
+	if cfg.AdminOrigin == "" {
+		cfg.AdminOrigin = "http://localhost:3010"
 	}
 	if cfg.SigningOrigin == "" {
 		cfg.SigningOrigin = cfg.WebOrigin

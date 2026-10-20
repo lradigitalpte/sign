@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: REST API for the original signing platform.
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:8085
 paths:
   /healthz:
     get:

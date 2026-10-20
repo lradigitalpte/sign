@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { SignetLogoIcon } from "@/components/marketing/site-chrome";
 import { cn } from "@/lib/utils";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
@@ -29,6 +30,20 @@ interface ShaderProps {
 interface SignInPageProps {
   className?: string;
   initialTab?: "signin" | "signup";
+  /** Same-site path to land on after WorkOS sign-in (already validated by the page). */
+  returnTo?: string;
+  defaultEmail?: string;
+  /** Message shown when the WorkOS callback sent the user back with an error. */
+  error?: string;
+}
+
+/** WorkOS AuthKit route for the tab (src/app/auth/sign-in|sign-up), with optional login hint and return path. */
+function authKitHref(tab: "signin" | "signup", email?: string, returnTo?: string) {
+  const params = new URLSearchParams();
+  if (email) params.set("email", email);
+  if (returnTo) params.set("returnTo", returnTo);
+  const query = params.toString();
+  return `${tab === "signup" ? "/auth/sign-up" : "/auth/sign-in"}${query ? `?${query}` : ""}`;
 }
 
 /*â”€â”€ CanvasRevealEffect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -545,10 +560,23 @@ const OtpInput = ({ code, refs, onChange, onKeyDown }: OtpInputProps) => (
 const LegalText = () => (
   <p className="text-xs text-white/40">
     By continuing, you agree to our{" "}
-    <Link href="/terms" className="underline transition-colors hover:text-white/60">Terms</Link>,{" "}
-    <Link href="/privacy" className="underline transition-colors hover:text-white/60">Privacy Policy</Link>, and{" "}
-    <Link href="/cookies" className="underline transition-colors hover:text-white/60">Cookie Notice</Link>.
+    <Link href="/terms" className="underline transition-colors hover:text-white/60">Terms</Link> and{" "}
+    <Link href="/privacy" className="underline transition-colors hover:text-white/60">Privacy Policy</Link>.
   </p>
+);
+
+/* â”€â”€ Arrow submit button (outside SignInPage so it isn't recreated on every keystroke) â”€â”€ */
+const ArrowSubmit = () => (
+  <button
+    type="submit"
+    aria-label="Continue"
+    className="group absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+  >
+    <span className="relative block h-full w-full overflow-hidden">
+      <span className="absolute inset-0 flex items-center justify-center transition-transform duration-300 group-hover:translate-x-full">→</span>
+      <span className="absolute inset-0 flex -translate-x-full items-center justify-center transition-transform duration-300 group-hover:translate-x-0">→</span>
+    </span>
+  </button>
 );
 
 /* â”€â”€ Tab Switcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -592,14 +620,12 @@ const TabSwitcher = ({ active, onChange }: TabSwitcherProps) => (
 );
 
 /* â”€â”€ SignInPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps) => {
+export const SignInPage = ({ className, initialTab = "signin", returnTo, defaultEmail = "", error }: SignInPageProps) => {
   /* â”€â”€ Tab state â”€â”€ */
   const [activeTab, setActiveTab] = useState<"signin" | "signup">(initialTab);
 
   /* â”€â”€ Shared step state (used by both flows) â”€â”€ */
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");          // Sign Up only
-  const [password, setPassword] = useState("");  // Sign In only
+  const [email, setEmail] = useState(defaultEmail);
   const [step, setStep] = useState<"form" | "code" | "success">("form");
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const codeInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -613,8 +639,6 @@ export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps
     setActiveTab(tab);
     setStep("form");
     setEmail("");
-    setName("");
-    setPassword("");
     setCode(["", "", "", "", "", ""]);
     setReverseCanvasVisible(false);
     setInitialCanvasVisible(true);
@@ -624,14 +648,12 @@ export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
-    if (activeTab === "signup" && !name) return;
-    const path = activeTab === "signup" ? "/auth/sign-up" : "/auth/sign-in";
-    window.location.assign(`${path}?email=${encodeURIComponent(email)}`);
+    // Full page navigation: the route handler redirects to WorkOS, which a client-side fetch can't follow.
+    window.location.assign(authKitHref(activeTab, email.trim(), returnTo));
   };
 
   const handleHostedAuth = () => {
-    const path = activeTab === "signup" ? "/auth/sign-up" : "/auth/sign-in";
-    window.location.assign(path);
+    window.location.assign(authKitHref(activeTab, undefined, returnTo));
   };
 
   /* â”€â”€ Focus OTP when step changes â”€â”€ */
@@ -671,19 +693,6 @@ export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps
     setInitialCanvasVisible(true);
   };
 
-  /* â”€â”€ Arrow submit button â”€â”€ */
-  const ArrowSubmit = () => (
-    <button
-      type="submit"
-      className="group absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
-    >
-      <span className="relative block h-full w-full overflow-hidden">
-        <span className="absolute inset-0 flex items-center justify-center transition-transform duration-300 group-hover:translate-x-full">→</span>
-        <span className="absolute inset-0 flex -translate-x-full items-center justify-center transition-transform duration-300 group-hover:translate-x-0">→</span>
-      </span>
-    </button>
-  );
-
   return (
     <div className={cn("relative flex min-h-screen w-full flex-col bg-black", className)}>
 
@@ -715,18 +724,18 @@ export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps
           aria-label="Back to home"
           className="fixed left-6 top-6 z-20 flex items-center gap-2.5 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-sm font-medium text-white/70 backdrop-blur-xl transition-colors hover:border-white/20 hover:text-white sm:left-8 sm:top-8"
         >
-          <span className="relative flex h-5 w-5 items-center justify-center" aria-hidden>
-            <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-white/80" />
-            <span className="absolute left-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-white/80" />
-            <span className="absolute right-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-white/80" />
-            <span className="absolute bottom-0 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-white/80" />
-          </span>
-          <span>YourSign</span>
+          <SignetLogoIcon className="size-5 text-white/80" />
+          <span>Signet</span>
         </Link>
 
         <div className="flex flex-1 items-center justify-center px-4 pb-8 pt-24 sm:px-6 sm:pt-28">
           <div className="grid w-full max-w-5xl overflow-hidden rounded-[2rem] border border-white/[0.12] bg-[#090909]/85 shadow-[0_30px_100px_rgba(0,0,0,0.65)] backdrop-blur-2xl lg:min-h-[620px] lg:grid-cols-[0.95fr_1.05fr]">
             <section className="flex flex-col justify-center p-5 sm:p-8 lg:p-12">
+              {error && step === "form" ? (
+                <p role="alert" className="mb-5 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-center text-sm text-red-200">
+                  {error}
+                </p>
+              ) : null}
 
               {/* â•â• TAB SWITCHER â€” only shown on "form" step â•â• */}
               <AnimatePresence>
@@ -796,7 +805,7 @@ export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps
                   </motion.div>
                 )}
 
-                {/* â”€â”€ Sign Up â€” name + email form â”€â”€ */}
+                {/* â”€â”€ Sign Up â€” email form â”€â”€ */}
                 {step === "form" && activeTab === "signup" && (
                   <motion.div
                     key="signup-form"
@@ -827,16 +836,8 @@ export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps
                         <div className="h-px flex-1 bg-white/10" />
                       </div>
 
+                      {/* WorkOS asks for the name on its own sign-up screen, so only the email is collected here. */}
                       <form onSubmit={handleFormSubmit} className="space-y-3">
-                        {/* Name */}
-                        <input
-                          type="text"
-                          placeholder="Full name"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className="w-full rounded-full border border-white/10 bg-transparent py-3 px-4 text-center text-white backdrop-blur-sm focus:border-white/30 focus:outline-none"
-                          required
-                        />
                         {/* Email + submit arrow */}
                         <div className="relative">
                           <input
@@ -931,8 +932,8 @@ export const SignInPage = ({ className, initialTab = "signin" }: SignInPageProps
                       </h1>
                       <p className="text-[1.25rem] font-light text-white/50">
                         {activeTab === "signup"
-                          ? `Welcome, ${name || "there"} 👋`
-                          : "Welcome back to YourSign"}
+                          ? "Welcome to Signet 👋"
+                          : "Welcome back to Signet"}
                       </p>
                     </div>
 

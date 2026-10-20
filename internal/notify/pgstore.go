@@ -25,7 +25,7 @@ func (s *PostgresStore) Claim(ctx context.Context) (Job, bool, error) {
 WITH next_job AS (
     SELECT id
     FROM notification_jobs
-    WHERE kind IN ('invitation', 'reminder', 'completion')
+    WHERE kind IN ('invitation', 'reminder', 'completion', 'sender_viewed', 'sender_signed')
       AND attempts < $1
       AND (
         (status IN ('pending', 'failed') AND available_at <= now())
@@ -59,9 +59,11 @@ SELECT e.id::text, e.title, e.email_subject, e.email_body, r.id::text, r.name, r
        COALESCE(b.config->>'logoDataUrl', ''),
        COALESCE(b.config->>'brandName', ''),
        COALESCE(b.config->>'primaryColor', ''),
-       COALESCE((b.config->>'hidePlatformBranding')::boolean, false)
+       COALESCE((b.config->>'hidePlatformBranding')::boolean, false),
+       COALESCE(u.name, ''), COALESCE(u.email, '')
 FROM envelopes e
 JOIN recipients r ON r.envelope_id = e.id
+LEFT JOIN users u ON u.id = e.created_by
 LEFT JOIN LATERAL (
     SELECT expires_at
     FROM signing_tokens
@@ -69,12 +71,13 @@ LEFT JOIN LATERAL (
     ORDER BY created_at DESC
     LIMIT 1
 ) t ON true
-LEFT JOIN organization_settings b ON b.organization_id = e.organization_id AND b.section = 'branding'
+LEFT JOIN LATERAL (SELECT effective_settings(e.organization_id, e.team_id, 'branding') AS config) b ON true
 WHERE e.id = $1::uuid AND r.id = $2::uuid`, job.EnvelopeID, job.RecipientID).Scan(
 		&value.EnvelopeID, &value.EnvelopeTitle, &value.EmailSubject, &value.EmailBody,
 		&value.RecipientID, &value.RecipientName, &value.RecipientEmail, &value.RecipientRole, &value.PrivateMessage,
 		&value.ExpiresAt,
 		&value.Branding.LogoDataURL, &value.Branding.BrandName, &value.Branding.PrimaryColor, &value.Branding.HidePlatformBranding,
+		&value.SenderName, &value.SenderEmail,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Invitation{}, ErrPermanent

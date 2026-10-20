@@ -183,6 +183,42 @@ func Completion(to, name, title, url string, branding Branding) Message {
 	}
 }
 
+// RecipientActivity tells the envelope's sender that a recipient viewed, signed or approved it.
+func RecipientActivity(to, senderName, recipientName, recipientEmail, title, action, url string, branding Branding) Message {
+	safeName := strings.TrimSpace(senderName)
+	if safeName == "" {
+		safeName = "there"
+	}
+	safeTitle := strings.TrimSpace(title)
+	if safeTitle == "" {
+		safeTitle = "your document"
+	}
+	who := strings.TrimSpace(recipientName)
+	if who == "" {
+		who = recipientEmail
+	} else if recipientEmail != "" {
+		who = fmt.Sprintf("%s (%s)", who, recipientEmail)
+	}
+	text := fmt.Sprintf("Hi %s,\n\n%s %s %s.\n\nSee the envelope's status and activity:\n%s\n", safeName, who, action, safeTitle, url)
+	bodyHTML := fmt.Sprintf(
+		`<p style="margin:0 0 12px;font-size:15px;color:#111827;">Hi %s,</p><p style="margin:0 0 16px;font-size:15px;color:#374151;"><strong>%s</strong> %s <strong>%s</strong>.</p>%s`,
+		html.EscapeString(safeName), html.EscapeString(who), html.EscapeString(action), html.EscapeString(safeTitle), emailButton("View envelope", url, branding.accentColor()),
+	)
+	return Message{
+		To:      to,
+		Subject: fmt.Sprintf("%s %s %s", recipientNameOr(recipientName, recipientEmail), action, safeTitle),
+		Text:    text,
+		HTML:    emailShell(branding, bodyHTML),
+	}
+}
+
+func recipientNameOr(name, fallback string) string {
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		return trimmed
+	}
+	return fallback
+}
+
 var workspaceRoleDescriptions = map[string]string{
 	"admin":  "As an admin you can send documents, invite people and manage workspace settings.",
 	"member": "As a member you can create, send and manage documents in the workspace.",
@@ -213,4 +249,18 @@ func OrganizationInvite(to, organizationName, inviterName, role, url string, exp
 		Text:    text,
 		HTML:    emailShell(Branding{}, bodyHTML),
 	}
+}
+
+// PasswordReset sends the WorkOS password reset link a signed-in user asked for on the Security page.
+func PasswordReset(to, name, url string) Message {
+	greeting := "Hi,"
+	if n := strings.TrimSpace(name); n != "" {
+		greeting = "Hi " + n + ","
+	}
+	text := fmt.Sprintf("%s\n\nYou asked to change your Secure Sign password. Choose a new one here:\n%s\n\nIf you didn't ask for this, ignore this email; your password stays the same.\n", greeting, url)
+	bodyHTML := fmt.Sprintf(
+		`<p style="margin:0 0 12px;font-size:15px;color:#111827;">%s</p><p style="margin:0 0 16px;font-size:15px;color:#374151;">You asked to change your Secure Sign password. Choose a new one with the button below.</p>%s<p style="margin:16px 0 0;font-size:12px;color:#9ca3af;">If you didn't ask for this, ignore this email; your password stays the same.</p>`,
+		html.EscapeString(greeting), emailButton("Choose a new password", url, Branding{}.accentColor()),
+	)
+	return Message{To: to, Subject: "Change your Secure Sign password", Text: text, HTML: emailShell(Branding{}, bodyHTML)}
 }

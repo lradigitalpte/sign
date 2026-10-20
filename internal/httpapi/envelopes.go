@@ -12,13 +12,16 @@ import (
 	"signing-platform/internal/identity"
 )
 
-func envelopeRoutes(service *envelope.Service, duplicator *envelope.Duplicator, details func(chi.Router)) func(chi.Router) {
+// envelopeRoutes mounts under /v1/envelopes. Lists and new envelopes use the request's team; anything
+// under /{envelopeID} first checks the user can use the envelope's team (teams.go).
+func envelopeRoutes(service *envelope.Service, duplicator *envelope.Duplicator, teams *teamAccess, details func(chi.Router)) func(chi.Router) {
 	return func(router chi.Router) {
 		router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			session, _ := identity.SessionFromContext(r.Context())
 			filter := envelope.ListFilter{
 				Status:   r.URL.Query().Get("status"),
 				FolderID: r.URL.Query().Get("folderId"),
+				TeamID:   session.Team.ID,
 			}
 			if r.URL.Query().Get("type") == "template" {
 				isTemplate := true
@@ -40,6 +43,7 @@ func envelopeRoutes(service *envelope.Service, duplicator *envelope.Duplicator, 
 				return
 			}
 			session, _ := identity.SessionFromContext(r.Context())
+			input.TeamID = session.Team.ID
 			value, err := service.Create(r.Context(), session.Workspace.ID, session.User.ID, input)
 			if err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -56,6 +60,12 @@ func envelopeRoutes(service *envelope.Service, duplicator *envelope.Duplicator, 
 				return
 			}
 			session, _ := identity.SessionFromContext(r.Context())
+			ids, err := teams.inCurrentTeam(r.Context(), session, input.EnvelopeIDs)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid envelope ids"})
+				return
+			}
+			input.EnvelopeIDs = ids
 			affected, err := service.BulkMoveToFolder(r.Context(), session.Workspace.ID, input)
 			if err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -72,6 +82,12 @@ func envelopeRoutes(service *envelope.Service, duplicator *envelope.Duplicator, 
 				return
 			}
 			session, _ := identity.SessionFromContext(r.Context())
+			ids, err := teams.inCurrentTeam(r.Context(), session, input.EnvelopeIDs)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid envelope ids"})
+				return
+			}
+			input.EnvelopeIDs = ids
 			affected, err := service.BulkDelete(r.Context(), session.Workspace.ID, input)
 			if err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -88,6 +104,12 @@ func envelopeRoutes(service *envelope.Service, duplicator *envelope.Duplicator, 
 				return
 			}
 			session, _ := identity.SessionFromContext(r.Context())
+			ids, err := teams.inCurrentTeam(r.Context(), session, input.EnvelopeIDs)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid envelope ids"})
+				return
+			}
+			input.EnvelopeIDs = ids
 			affected, err := service.BulkVoid(r.Context(), session.Workspace.ID, session.User.ID, input)
 			if err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -96,6 +118,7 @@ func envelopeRoutes(service *envelope.Service, duplicator *envelope.Duplicator, 
 			writeJSON(w, http.StatusOK, map[string]any{"affected": affected})
 		})
 		router.Route("/{envelopeID}", func(item chi.Router) {
+			item.Use(teams.envelopeAccess)
 			item.Get("/", func(w http.ResponseWriter, r *http.Request) {
 				session, _ := identity.SessionFromContext(r.Context())
 				value, err := service.Get(r.Context(), session.Workspace.ID, chi.URLParam(r, "envelopeID"))

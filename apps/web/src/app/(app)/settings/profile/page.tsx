@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DeleteAccountSection } from "@/components/settings/delete-account-section";
 import { useMe, useUpdateProfile } from "@/hooks/use-envelope-api";
 
 function getInitials(name: string) {
@@ -56,6 +57,21 @@ export default function ProfileSettingsPage() {
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Unable to save your profile.");
     }
+  }
+
+  if (meQuery.isError) {
+    return (
+      <main className="mx-auto w-full max-w-5xl px-3 py-6 sm:px-0 lg:py-10">
+        <div role="alert" className="flex min-h-[420px] flex-col items-center justify-center gap-3 rounded-3xl border bg-card p-6 text-center">
+          <p className="font-medium">Couldn&apos;t load your profile</p>
+          <p className="max-w-sm text-sm text-muted-foreground">{meQuery.error instanceof Error ? meQuery.error.message : "Check your connection and try again."}</p>
+          <Button variant="outline" onClick={() => void meQuery.refetch()} disabled={meQuery.isFetching}>
+            {meQuery.isFetching ? <Loader2 className="animate-spin" /> : null}
+            Try again
+          </Button>
+        </div>
+      </main>
+    );
   }
 
   if (meQuery.isLoading || !user) {
@@ -143,6 +159,7 @@ export default function ProfileSettingsPage() {
             <Button asChild className="mt-6 h-11 w-full rounded-xl shadow-[0_12px_28px_-14px_rgba(37,99,235,.8)]"><Link href="/signature">Open signature studio <ArrowUpRight className="size-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" /></Link></Button>
           </section>
         </div>
+        <DeleteAccountSection email={user.email} />
       </div>
     </main>
   );

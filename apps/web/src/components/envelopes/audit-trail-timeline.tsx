@@ -6,13 +6,16 @@ import {
   Eye,
   FileCheck,
   FilePenLine,
+  Hourglass,
   History,
+  KeyRound,
   Mail,
   Send,
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { createElement } from "react";
 
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -32,6 +35,11 @@ const EVENT_ICONS: Record<string, LucideIcon> = {
   "envelope.completed": ShieldCheck,
   "envelope.voided": Ban,
   "envelope.reminded": Mail,
+  "envelope.expired": Hourglass,
+  "envelope.extended": Hourglass,
+  "envelope.support_viewed": Eye,
+  "recipient.passcode_failed": KeyRound,
+  "recipient.passcode_verified": KeyRound,
   "recipient.completed": FilePenLine,
   "recipient.approved": CheckCircle2,
   "recipient.declined": Ban,
@@ -108,6 +116,9 @@ function EventDetails({ event }: { event: GroupedAuditEvent }) {
           {t("invitationsSent", { count: invitations })}
         </span>
       ) : null}
+      {event.metadata.automatic === true ? (
+        <span className="rounded-full bg-muted px-2 py-0.5">{t("automatic")}</span>
+      ) : null}
       {sha ? (
         <span className="rounded-full bg-muted px-2 py-0.5 font-mono" title={String(event.metadata.sha256)}>
           SHA-256 {sha}
@@ -128,8 +139,6 @@ function TimelineItem({
 }) {
   const t = useTranslations("AuditTrail");
   const tone = auditEventTone(event.eventType);
-  const Icon = eventIcon(event.eventType);
-
   return (
     <li className="relative flex gap-4">
       <div className="flex w-9 shrink-0 flex-col items-center">
@@ -139,7 +148,7 @@ function TimelineItem({
             TONE_STYLES[tone],
           )}
         >
-          <Icon className="size-4" aria-hidden="true" />
+          {createElement(eventIcon(event.eventType), { className: "size-4", "aria-hidden": true })}
         </div>
         {!isLast ? <div className="my-1 w-px flex-1 bg-border" aria-hidden="true" /> : null}
       </div>
@@ -152,7 +161,11 @@ function TimelineItem({
                 <EventTitle event={event} />
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                {auditActor(event) === "System" ? t("systemActor") : auditActor(event)}
+                {event.metadata.support === true
+                  ? t("supportActor")
+                  : auditActor(event) === "System"
+                    ? t("systemActor")
+                    : auditActor(event)}
               </p>
             </div>
             <time className="shrink-0 text-xs tabular-nums text-muted-foreground" dateTime={event.occurredAt}>

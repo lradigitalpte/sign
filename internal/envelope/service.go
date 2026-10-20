@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 var ErrNotFound = errors.New("envelope not found")
@@ -46,6 +49,7 @@ type Envelope struct {
 	AttachCompletedPDF    bool               `json:"attachCompletedPdf"`
 	SessionTimeoutMinutes int                `json:"sessionTimeoutMinutes"`
 	RequirePasscode       bool               `json:"requirePasscode"`
+	HasPasscode           bool               `json:"hasPasscode"`
 	ExpiresAt             *time.Time         `json:"expiresAt,omitempty"`
 	IsTemplate            bool               `json:"isTemplate"`
 	CreatedAt             time.Time          `json:"createdAt"`
@@ -60,6 +64,9 @@ type CreateInput struct {
 	DateFormat string     `json:"dateFormat"`
 	ExpiresAt  *time.Time `json:"expiresAt"`
 	IsTemplate bool       `json:"isTemplate"`
+	// TeamID is the team the envelope belongs to, set by the API from the request's team. Empty means
+	// the workspace's default team.
+	TeamID string `json:"-"`
 }
 
 type UpdateInput struct {
@@ -83,12 +90,16 @@ type UpdateInput struct {
 	RequirePasscode       *bool      `json:"requirePasscode"`
 	Passcode              *string    `json:"passcode"`
 	ExpiresAt             *time.Time `json:"expiresAt"`
+	// ClearExpiresAt removes the expiration date ("never expires"); a null expiresAt alone leaves it unchanged.
+	ClearExpiresAt   bool `json:"clearExpiresAt"`
+	ClearRedirectURL bool `json:"-"`
 }
 
 type ListFilter struct {
 	Status     string
 	FolderID   string // "" = all, "none" = unfiled, otherwise folder uuid
 	IsTemplate *bool  // nil = documents only (default), pointer to true = templates only
+	TeamID     string // only this team's envelopes; "" = the whole workspace
 }
 
 type MoveFolderInput struct {
@@ -167,15 +178,7 @@ func (s *Service) Create(ctx context.Context, organizationID, userID string, inp
 	if input.Title == "" {
 		return Envelope{}, errors.New("title is required")
 	}
-	if input.Language == "" {
-		input.Language = "en"
-	}
-	if input.Timezone == "" {
-		input.Timezone = "Etc/UTC"
-	}
-	if input.DateFormat == "" {
-		input.DateFormat = "YYYY-MM-DD"
-	}
+	// Empty language, timezone and date format take the workspace's defaults in the store.
 	return s.store.Create(ctx, organizationID, userID, input)
 }
 
@@ -237,8 +240,29 @@ func (s *Service) Update(ctx context.Context, organizationID, id string, input U
 	input.EmailSubject = normalizeOptionalText(input.EmailSubject)
 	input.EmailBody = normalizeOptionalText(input.EmailBody)
 	input.ExternalID = normalizeOptionalText(input.ExternalID)
+	input.ClearRedirectURL = input.RedirectURL != nil && strings.TrimSpace(*input.RedirectURL) == ""
 	input.RedirectURL = normalizeOptionalText(input.RedirectURL)
+	if input.RedirectURL != nil {
+		if err := validateRedirectURL(*input.RedirectURL); err != nil {
+			return Envelope{}, err
+		}
+	}
 	input.Passcode = normalizeOptionalText(input.Passcode)
+	if input.Passcode != nil {
+		hashed, err := hashPasscode(*input.Passcode)
+		if err != nil {
+			return Envelope{}, err
+		}
+		input.Passcode = &hashed
+	}
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now()) {
+		return Envelope{}, errors.New("expiration date must be in the future")
+	}
+	for _, days := range []*int{input.FirstReminderDays, input.RepeatReminderDays} {
+		if days != nil && (*days < 1 || *days > 90) {
+			return Envelope{}, errors.New("reminder intervals must be between 1 and 90 days")
+		}
+	}
 	return s.store.Update(ctx, organizationID, id, input)
 }
 
@@ -267,4 +291,23 @@ func (s *Service) ListAudit(ctx context.Context, organizationID, id string) ([]A
 		return nil, err
 	}
 	return s.store.ListAudit(ctx, organizationID, id)
+}
+
+func validateRedirectURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		return errors.New("redirect URL must be a full http:// or https:// address")
+	}
+	return nil
+}
+
+func hashPasscode(passcode string) (string, error) {
+	if n := len([]rune(passcode)); n < 4 || n > 64 {
+		return "", errors.New("passcode must be between 4 and 64 characters")
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(passcode), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashed), nil
 }

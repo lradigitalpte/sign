@@ -50,13 +50,14 @@ WITH existing AS (
   SELECT organization_id FROM organization_auth_identities
   WHERE provider = $1 AND provider_subject = $2
 ), updated AS (
-  UPDATE organizations SET name = $3, updated_at = now()
+  -- A name Signet staff set (name_locked_at) wins over the one derived at sign-in.
+  UPDATE organizations SET name = CASE WHEN name_locked_at IS NULL THEN $3 ELSE name END, updated_at = now()
   WHERE id = (SELECT organization_id FROM existing)
   RETURNING id, name, slug
 ), inserted AS (
   INSERT INTO organizations (name, slug)
   SELECT $3, $4 WHERE NOT EXISTS (SELECT 1 FROM updated)
-  ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, updated_at = now()
+  ON CONFLICT (slug) DO UPDATE SET name = CASE WHEN organizations.name_locked_at IS NULL THEN EXCLUDED.name ELSE organizations.name END, updated_at = now()
   RETURNING id, name, slug
 )
 SELECT id::text, name, slug FROM updated

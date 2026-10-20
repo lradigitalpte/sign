@@ -383,7 +383,13 @@ export function GuidedSigningSession({ token, variant, layoutMode = false }: { t
     }
     setBusy(true);
     try {
-      await completeSigning(token);
+      const completed = await completeSigning(token);
+      const redirect = safeRedirect(completed.envelope.redirectUrl);
+      if (redirect) {
+        // The sender chose where signers land after finishing.
+        window.location.assign(redirect);
+        return;
+      }
       router.push(completedPath(variant, token, session.envelope.id));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("loadError"));
@@ -923,4 +929,14 @@ function SignaturePickerDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function safeRedirect(value?: string) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }

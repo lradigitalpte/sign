@@ -23,7 +23,7 @@ type querier interface {
 
 func loadSnapshot(ctx context.Context, q querier, org, envelopeID string) (snapshot, error) {
 	var value snapshot
-	err := q.QueryRow(ctx, `SELECT id::text, title, status::text FROM envelopes WHERE id=$1::uuid AND organization_id=$2::uuid`, envelopeID, org).Scan(&value.EnvelopeID, &value.Title, &value.Status)
+	err := q.QueryRow(ctx, `SELECT id::text, title, status::text, require_passcode, passcode IS NOT NULL, expires_at, now() FROM envelopes WHERE id=$1::uuid AND organization_id=$2::uuid`, envelopeID, org).Scan(&value.EnvelopeID, &value.Title, &value.Status, &value.RequirePasscode, &value.HasPasscode, &value.ExpiresAt, &value.Now)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return snapshot{}, ErrNotFound
 	}
@@ -264,27 +264,48 @@ func (s *PostgresStore) Remind(ctx context.Context, org, userID, envelopeID stri
 		return RemindResult{}, ErrNotInProgress
 	}
 
-	ids, err := listRecipientIDs(ctx, tx, `
-SELECT id::text FROM recipients
-WHERE envelope_id=$1::uuid AND role<>'cc' AND status IN ('sent','viewed')
-ORDER BY signing_order, created_at`, envelopeID)
-	if err != nil {
-		return RemindResult{}, err
-	}
-	if len(ids) == 0 {
-		return RemindResult{}, ErrNothingToRemind
-	}
-	if err := inviteRecipients(ctx, tx, envelopeID, ids, "reminder", false, generate); err != nil {
-		return RemindResult{}, err
-	}
-	_, err = tx.Exec(ctx, `INSERT INTO audit_events(envelope_id, actor_user_id, event_type, metadata) VALUES($1::uuid,$2::uuid,'envelope.reminded',jsonb_build_object('reminders',$3::int))`, envelopeID, userID, len(ids))
+	queued, err := RemindInTx(ctx, tx, envelopeID, &userID, nil, generate)
 	if err != nil {
 		return RemindResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return RemindResult{}, err
 	}
-	return RemindResult{EnvelopeID: envelopeID, RemindersQueued: len(ids)}, nil
+	return RemindResult{EnvelopeID: envelopeID, RemindersQueued: queued}, nil
+}
+
+// RemindInTx queues a reminder with a fresh signing link for every recipient still waiting on the envelope.
+// The caller has locked the envelope and checked it is in progress. actorUserID may be nil (no customer actor);
+// metadata is merged into the audit event.
+func RemindInTx(ctx context.Context, tx pgx.Tx, envelopeID string, actorUserID *string, metadata map[string]any, generate func() (Token, error)) (int, error) {
+	ids, err := listRecipientIDs(ctx, tx, `
+SELECT id::text FROM recipients
+WHERE envelope_id=$1::uuid AND role<>'cc' AND status IN ('sent','viewed')
+ORDER BY signing_order, created_at`, envelopeID)
+	if err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, ErrNothingToRemind
+	}
+	if err := inviteRecipients(ctx, tx, envelopeID, ids, "reminder", false, generate); err != nil {
+		return 0, err
+	}
+	_, err = tx.Exec(ctx, `UPDATE recipients SET last_reminded_at=now() WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return 0, err
+	}
+	var extra *string
+	if len(metadata) > 0 {
+		encoded, err := json.Marshal(metadata)
+		if err != nil {
+			return 0, err
+		}
+		text := string(encoded)
+		extra = &text
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO audit_events(envelope_id, actor_user_id, event_type, metadata) VALUES($1::uuid,$2::uuid,'envelope.reminded',jsonb_build_object('reminders',$3::int) || COALESCE($4::jsonb, '{}'::jsonb))`, envelopeID, actorUserID, len(ids), extra)
+	return len(ids), err
 }
 
 func listRecipientIDs(ctx context.Context, q querier, query, envelopeID string) ([]string, error) {
@@ -304,8 +325,15 @@ func listRecipientIDs(ctx context.Context, q querier, query, envelopeID string) 
 	return ids, rows.Err()
 }
 
+// linkLifetime is how long a signing link stays valid when the envelope has no later expiration date.
+const linkLifetime = 30 * 24 * time.Hour
+
 func inviteRecipients(ctx context.Context, tx pgx.Tx, envelopeID string, ids []string, kind string, markSent bool, generate func() (Token, error)) error {
-	expires := time.Now().UTC().Add(30 * 24 * time.Hour)
+	var expires time.Time
+	err := tx.QueryRow(ctx, `SELECT GREATEST(now() + make_interval(secs => $2), COALESCE(expires_at, now())) FROM envelopes WHERE id=$1::uuid`, envelopeID, linkLifetime.Seconds()).Scan(&expires)
+	if err != nil {
+		return err
+	}
 	for _, recipientID := range ids {
 		token, err := generate()
 		if err != nil {
@@ -335,7 +363,7 @@ func (s *PostgresStore) ShareLink(ctx context.Context, org, envelopeID, recipien
 		return "", err
 	}
 	tag, err := s.db.Exec(ctx, `INSERT INTO signing_tokens(recipient_id,token_hash,expires_at)
-SELECT r.id,$4,now()+interval '30 days' FROM recipients r JOIN envelopes e ON e.id=r.envelope_id
+SELECT r.id,$4,GREATEST(now()+interval '30 days', COALESCE(e.expires_at, now())) FROM recipients r JOIN envelopes e ON e.id=r.envelope_id
 WHERE r.id=$1::uuid AND e.id=$2::uuid AND e.organization_id=$3::uuid AND e.status IN ('in_progress','completed')`, recipientID, envelopeID, org, token.Hash)
 	if err != nil {
 		return "", err

@@ -190,8 +190,8 @@
     "navigation": {
       "overview": "Resumen",
       "inbox": "Bandeja",
-        "envelopes": "Sobres",
-        "selfSign": "Autofirmar",
+      "envelopes": "Sobres",
+      "selfSign": "Autofirmar",
       "signature": "Firma",
       "encrypt": "Cifrar",
       "templates": "Plantillas",
@@ -361,6 +361,7 @@
     "summaryLatest": "Actividad reciente",
     "localSession": "Sesión local",
     "systemActor": "Sistema · evento automático",
+    "supportActor": "Soporte de Signet",
     "invitationsSent": "{count, plural, one {# invitación enviada} other {# invitaciones enviadas}}",
     "groupedFinalized": "PDF completado regenerado ({count} veces)",
     "groupedViewed": "Documento visto de nuevo ({count} veces)",
@@ -372,12 +373,17 @@
         "completed": "Todas las firmas recopiladas",
         "voided": "Sobre anulado",
         "advanced": "Orden de firma avanzado",
-        "reminded": "Recordatorios enviados"
+        "reminded": "Recordatorios enviados",
+        "expired": "Sobre caducado",
+        "extended": "Fecha de vencimiento ampliada",
+        "support_viewed": "Documento abierto por el soporte de Signet"
       },
       "recipient": {
         "completed": "Firmante completó la firma",
         "approved": "El destinatario aprobó el sobre",
-        "declined": "Firmante rechazó firmar"
+        "declined": "Firmante rechazó firmar",
+        "passcode_failed": "Código de acceso incorrecto",
+        "passcode_verified": "Código de acceso verificado"
       },
       "document": {
         "finalized": "PDF completado generado"
@@ -385,6 +391,22 @@
       "invitation": {
         "delivered": "Invitación entregada",
         "failed": "Error en la invitación"
+      },
+      "reminder": {
+        "delivered": "Recordatorio entregado",
+        "failed": "Error al enviar el recordatorio"
+      },
+      "completion": {
+        "delivered": "Correo de finalización entregado",
+        "failed": "Error al enviar el correo de finalización"
+      },
+      "sender_viewed": {
+        "delivered": "Se avisó al remitente de que se abrió el documento",
+        "failed": "Error al avisar al remitente"
+      },
+      "sender_signed": {
+        "delivered": "Se avisó al remitente de que el destinatario firmó",
+        "failed": "Error al avisar al remitente"
       }
     },
     "events": {
@@ -397,7 +419,8 @@
       "signed": "Campos de firma adoptados y completados"
     },
     "loading": "Cargando el registro de auditoría…",
-    "empty": "Aún no hay eventos de auditoría."
+    "empty": "Aún no hay eventos de auditoría.",
+    "automatic": "Automático"
   },
   "Templates": {
     "title": "Plantillas",
@@ -664,7 +687,15 @@
       "invalid": "El token de firma no es válido o ha sido revocado por motivos de seguridad."
     },
     "backHome": "Volver al inicio",
-    "loadError": "No se puede cargar esta sesión de firma."
+    "loadError": "No se puede cargar esta sesión de firma.",
+    "passcodeTitle": "Introduce el código de acceso",
+    "passcodeDesc": "{organization} protegió este documento con un código de acceso. Pídelo al remitente si no lo tienes.",
+    "passcodeLabel": "Código de acceso",
+    "passcodeSubmit": "Abrir documento",
+    "passcodeIncorrect": "El código de acceso no es correcto. Revísalo e inténtalo de nuevo.",
+    "passcodeLocked": "Demasiados intentos incorrectos. Inténtalo de nuevo en 15 minutos.",
+    "expiredTitle": "Este documento ha caducado",
+    "expiredDesc": "Dejó de aceptar firmas el {date}. Contacta con el remitente si aún necesitas firmar."
   },
   "Organizations": {
     "title": "Organizaciones y Espacios de Trabajo",

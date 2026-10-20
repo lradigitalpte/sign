@@ -1,10 +1,16 @@
 package send
 
+import "time"
+
 type snapshot struct {
-	EnvelopeID string
-	Title      string
-	Status     string
-	Documents  []snapshotDocument
+	EnvelopeID      string
+	Title           string
+	Status          string
+	RequirePasscode bool
+	HasPasscode     bool
+	ExpiresAt       *time.Time
+	Now             time.Time
+	Documents       []snapshotDocument
 	Recipients []snapshotRecipient
 	Fields     []snapshotField
 }
@@ -162,6 +168,12 @@ func evaluate(s snapshot) Review {
 	}
 	if orderError := signingOrderError(orders, actionable); orderError != "" {
 		review.Errors = append(review.Errors, orderError)
+	}
+	if s.RequirePasscode && !s.HasPasscode {
+		review.Errors = append(review.Errors, "Set a signer passcode or turn off the passcode requirement")
+	}
+	if s.ExpiresAt != nil && !s.ExpiresAt.After(s.Now) {
+		review.Errors = append(review.Errors, "The expiration date has passed; choose a new one before sending")
 	}
 	if review.FieldCounts.Total == 0 {
 		review.Warnings = append(review.Warnings, "No document fields have been placed")

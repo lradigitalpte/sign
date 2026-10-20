@@ -6,12 +6,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"signing-platform/internal/config"
 	"signing-platform/internal/database"
 	"signing-platform/internal/email"
+	"signing-platform/internal/heartbeat"
 	"signing-platform/internal/notify"
 	"signing-platform/internal/securetoken"
+	"signing-platform/internal/send"
 )
 
 func main() {
@@ -67,7 +70,14 @@ func main() {
 		}()
 	}
 
-	processor := notify.NewProcessor(notify.NewPostgresStore(db), mailer, protector, cfg.SigningOrigin, logger)
+	// Lets the admin System page see this worker and its jobs.
+	go heartbeat.RunInstance(ctx, db, "worker", []string{"email", "scheduler"}, logger)
+
+	// Automatic reminders and envelope expiration run alongside email delivery.
+	go send.NewScheduler(db, send.NewTokenGenerator(protector), logger).Run(ctx, time.Minute)
+
+	processor := notify.NewProcessor(notify.NewPostgresStore(db), mailer, protector, cfg.SigningOrigin, logger).
+		WithMonitor(heartbeat.NewThrottled(db, heartbeat.JobEmailDelivery, heartbeat.Interval))
 	logger.Info("worker started", "environment", cfg.Environment)
 	if err := processor.Run(ctx, 0); err != nil {
 		logger.Error("worker stopped", "error", err)

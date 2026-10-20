@@ -90,3 +90,15 @@ func (m *MinIO) Ping(ctx context.Context) error {
 	}
 	return nil
 }
+
+// Check confirms the bucket is reachable without writing anything.
+func (m *MinIO) Check(ctx context.Context) error {
+	exists, err := m.client.BucketExists(ctx, m.bucket)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("bucket %q does not exist", m.bucket)
+	}
+	return nil
+}

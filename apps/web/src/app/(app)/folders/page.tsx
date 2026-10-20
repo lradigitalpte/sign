@@ -1,7 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { UnavailableFeature } from "@/components/shared/unavailable-feature";
-
-export default function Page() {
-  return <UnavailableFeature />;
+// Folders are created, renamed and deleted from the folder bar on the Envelopes page.
+export default function FoldersPage() {
+  redirect("/envelopes");
 }

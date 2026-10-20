@@ -5,6 +5,8 @@ import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { ThemeProvider } from "next-themes";
 import { useState } from "react";
 
+import { PlanLimitDialog } from "@/components/shared/plan-limit-dialog";
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
@@ -25,7 +27,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AuthKitProvider>
       <ThemeProvider attribute="class" defaultTheme="system" disableTransitionOnChange enableSystem>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          {children}
+          <PlanLimitDialog />
+        </QueryClientProvider>
       </ThemeProvider>
     </AuthKitProvider>
   );

@@ -1,7 +1,7 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { UnavailableFeature } from "@/components/shared/unavailable-feature";
-
-export default function Page() {
-  return <UnavailableFeature />;
+// An envelope's signer passcode and session timeout are set in Document settings in the editor.
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  redirect(`/envelopes/${encodeURIComponent(id)}/editor`);
 }

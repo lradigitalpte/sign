@@ -18,6 +18,17 @@ func signingRoutes(service *signing.Service) func(chi.Router) {
 			session, err := service.Session(r.Context(), tokenHash(r))
 			writeSigning(w, session, err)
 		})
+		router.Post("/passcode", func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				Passcode string `json:"passcode"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+				return
+			}
+			session, err := service.VerifyPasscode(r.Context(), tokenHash(r), body.Passcode, requestAudit(r))
+			writeSigning(w, session, err)
+		})
 		router.Post("/view", func(w http.ResponseWriter, r *http.Request) {
 			session, err := service.View(r.Context(), tokenHash(r), requestAudit(r))
 			writeSigning(w, session, err)
@@ -160,6 +171,12 @@ func writeSigning(w http.ResponseWriter, session signing.Session, err error) {
 
 func writeSigningErr(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, signing.ErrPasscodeRequired):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "passcode_required"})
+	case errors.Is(err, signing.ErrPasscodeIncorrect):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "passcode_incorrect"})
+	case errors.Is(err, signing.ErrPasscodeLocked):
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error(), "code": "passcode_locked"})
 	case errors.Is(err, signing.ErrInvalidToken):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "signing session not found"})
 	case errors.Is(err, signing.ErrUnavailable), errors.Is(err, signing.ErrAlreadyFinished):

@@ -3,6 +3,7 @@
 import { use } from "react";
 
 import { PreferWorkspaceSigning } from "@/components/signing/prefer-workspace-signing";
+import { SigningAccessGate } from "@/components/signing/signing-access-gate";
 
 export default function PublicSigningTokenLayout({
   children,
@@ -15,7 +16,7 @@ export default function PublicSigningTokenLayout({
   return (
     <>
       <PreferWorkspaceSigning token={token} />
-      {children}
+      <SigningAccessGate token={token}>{children}</SigningAccessGate>
     </>
   );
 }

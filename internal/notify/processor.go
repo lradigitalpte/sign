@@ -25,6 +25,18 @@ type Processor struct {
 	protector *securetoken.Protector
 	origin    string
 	logger    *slog.Logger
+	monitor   Monitor
+}
+
+// Monitor is told the outcome of every pass over the queue, such as heartbeat.Throttled.
+type Monitor interface {
+	Record(ctx context.Context, started time.Time, err error)
+}
+
+// WithMonitor reports each pass over the queue to m.
+func (p *Processor) WithMonitor(m Monitor) *Processor {
+	p.monitor = m
+	return p
 }
 
 func NewProcessor(store Store, mailer email.Mailer, protector *securetoken.Protector, origin string, logger *slog.Logger) *Processor {
@@ -88,6 +100,19 @@ func invitationOptions(invitation Invitation) email.InvitationOptions {
 
 func (p *Processor) messageFor(job Job, invitation Invitation) (email.Message, error) {
 	switch jobKind(job.Kind) {
+	case "sender_viewed", "sender_signed":
+		if invitation.SenderEmail == "" {
+			return email.Message{}, errors.Join(ErrPermanent, errors.New("envelope sender has no email address"))
+		}
+		action := "viewed"
+		if job.Kind == "sender_signed" {
+			action = "signed"
+			if invitation.RecipientRole == "approver" {
+				action = "approved"
+			}
+		}
+		link := p.origin + "/envelopes/" + url.PathEscape(invitation.EnvelopeID)
+		return email.RecipientActivity(invitation.SenderEmail, invitation.SenderName, invitation.RecipientName, invitation.RecipientEmail, invitation.EnvelopeTitle, action, link, invitation.Branding), nil
 	case "completion":
 		raw, err := p.protector.Decrypt(job.TokenCiphertext)
 		if err != nil {
@@ -119,15 +144,21 @@ func (p *Processor) Run(ctx context.Context, interval time.Duration) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
+		started := time.Now()
+		var passErr error
 		for {
 			processed, err := p.ProcessOne(ctx)
 			if err != nil {
 				p.logger.Error("invitation worker", "error", err)
+				passErr = err
 				break
 			}
 			if !processed {
 				break
 			}
+		}
+		if p.monitor != nil && ctx.Err() == nil {
+			p.monitor.Record(ctx, started, passErr)
 		}
 		select {
 		case <-ctx.Done():

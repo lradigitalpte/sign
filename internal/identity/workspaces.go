@@ -42,7 +42,7 @@ func (s *Service) ListWorkspaces(ctx context.Context, userID string) ([]Workspac
 	return s.workspaces.ListWorkspaces(ctx, userID)
 }
 
-const workspaceColumns = `o.id::text, o.name, o.slug, m.role::text, o.slug LIKE 'personal-%'`
+const workspaceColumns = `o.id::text, o.name, o.slug, m.role::text, o.slug LIKE 'personal-%', o.suspended_at IS NOT NULL`
 
 func (s *PostgresStore) ListWorkspaces(ctx context.Context, userID string) ([]Workspace, error) {
 	rows, err := s.db.Query(ctx, `
@@ -58,7 +58,7 @@ ORDER BY (o.slug LIKE 'personal-%') DESC, o.name`, userID)
 	values := []Workspace{}
 	for rows.Next() {
 		var workspace Workspace
-		if err := rows.Scan(&workspace.ID, &workspace.Name, &workspace.Slug, &workspace.Role, &workspace.Personal); err != nil {
+		if err := rows.Scan(&workspace.ID, &workspace.Name, &workspace.Slug, &workspace.Role, &workspace.Personal, &workspace.Suspended); err != nil {
 			return nil, err
 		}
 		values = append(values, workspace)
@@ -73,7 +73,7 @@ SELECT `+workspaceColumns+`
 FROM organization_memberships m
 JOIN organizations o ON o.id = m.organization_id
 WHERE m.user_id = $1::uuid AND m.organization_id = $2::uuid`, userID, workspaceID).
-		Scan(&workspace.ID, &workspace.Name, &workspace.Slug, &workspace.Role, &workspace.Personal)
+		Scan(&workspace.ID, &workspace.Name, &workspace.Slug, &workspace.Role, &workspace.Personal, &workspace.Suspended)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Workspace{}, ErrWorkspaceNotFound
 	}

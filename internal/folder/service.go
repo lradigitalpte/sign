@@ -61,31 +61,31 @@ func normalizeName(name string) (string, error) {
 	return name, nil
 }
 
-func (s *Service) List(ctx context.Context, organizationID string) ([]Folder, error) {
-	return s.store.List(ctx, organizationID)
+func (s *Service) List(ctx context.Context, teamID string) ([]Folder, error) {
+	return s.store.List(ctx, teamID)
 }
 
-func (s *Service) Create(ctx context.Context, organizationID, userID string, input CreateInput) (Folder, error) {
+func (s *Service) Create(ctx context.Context, teamID, userID string, input CreateInput) (Folder, error) {
 	name, err := normalizeName(input.Name)
 	if err != nil {
 		return Folder{}, err
 	}
-	return s.store.Create(ctx, organizationID, userID, name)
+	return s.store.Create(ctx, teamID, userID, name)
 }
 
-func (s *Service) Update(ctx context.Context, organizationID, id string, input UpdateInput) (Folder, error) {
+func (s *Service) Update(ctx context.Context, teamID, id string, input UpdateInput) (Folder, error) {
 	name, err := normalizeName(input.Name)
 	if err != nil {
 		return Folder{}, err
 	}
-	return s.store.Update(ctx, organizationID, id, name)
+	return s.store.Update(ctx, teamID, id, name)
 }
 
-func (s *Service) Delete(ctx context.Context, organizationID, id string) error {
-	return s.store.Delete(ctx, organizationID, id)
+func (s *Service) Delete(ctx context.Context, teamID, id string) error {
+	return s.store.Delete(ctx, teamID, id)
 }
 
-func (s *Service) TransferEnvelopes(ctx context.Context, organizationID, fromFolderID string, input TransferInput) (TransferResult, error) {
+func (s *Service) TransferEnvelopes(ctx context.Context, teamID, fromFolderID string, input TransferInput) (TransferResult, error) {
 	fromFolderID = strings.TrimSpace(fromFolderID)
 	if fromFolderID == "" {
 		return TransferResult{}, ErrNotFound
@@ -102,7 +102,7 @@ func (s *Service) TransferEnvelopes(ctx context.Context, organizationID, fromFol
 			to = &trimmed
 		}
 	}
-	moved, err := s.store.TransferEnvelopes(ctx, organizationID, fromFolderID, to)
+	moved, err := s.store.TransferEnvelopes(ctx, teamID, fromFolderID, to)
 	if err != nil {
 		return TransferResult{}, err
 	}

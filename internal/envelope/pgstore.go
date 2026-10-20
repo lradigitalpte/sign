@@ -13,9 +13,9 @@ type PostgresStore struct{ db *pgxpool.Pool }
 
 func NewPostgresStore(db *pgxpool.Pool) *PostgresStore { return &PostgresStore{db: db} }
 
-const columns = `id::text, organization_id::text, created_by::text, title, status::text, language, timezone, date_format, allowed_signature_types, distribution_method, external_id, redirect_url, email_subject, email_body, folder_id::text, auto_reminders, first_reminder_days, repeat_reminder_days, notify_on_view, notify_on_sign, attach_completed_pdf, session_timeout_minutes, require_passcode, expires_at, is_template, created_at, updated_at`
+const columns = `id::text, organization_id::text, created_by::text, title, status::text, language, timezone, date_format, allowed_signature_types, distribution_method, external_id, redirect_url, email_subject, email_body, folder_id::text, auto_reminders, first_reminder_days, repeat_reminder_days, notify_on_view, notify_on_sign, attach_completed_pdf, session_timeout_minutes, require_passcode, (passcode IS NOT NULL), expires_at, is_template, created_at, updated_at`
 
-const detailedColumns = `e.id::text, e.organization_id::text, e.created_by::text, e.title, e.status::text, e.language, e.timezone, e.date_format, e.allowed_signature_types, e.distribution_method, e.external_id, e.redirect_url, e.email_subject, e.email_body, e.folder_id::text, e.auto_reminders, e.first_reminder_days, e.repeat_reminder_days, e.notify_on_view, e.notify_on_sign, e.attach_completed_pdf, e.session_timeout_minutes, e.require_passcode, e.expires_at, e.is_template, e.created_at, e.updated_at, u.name, u.email, COALESCE((SELECT json_agg(json_build_object('id', r.id::text, 'name', r.name, 'email', r.email, 'role', r.role::text, 'status', r.status::text, 'signingOrder', r.signing_order) ORDER BY r.signing_order, r.created_at) FROM recipients r WHERE r.envelope_id = e.id), '[]'::json)`
+const detailedColumns = `e.id::text, e.organization_id::text, e.created_by::text, e.title, e.status::text, e.language, e.timezone, e.date_format, e.allowed_signature_types, e.distribution_method, e.external_id, e.redirect_url, e.email_subject, e.email_body, e.folder_id::text, e.auto_reminders, e.first_reminder_days, e.repeat_reminder_days, e.notify_on_view, e.notify_on_sign, e.attach_completed_pdf, e.session_timeout_minutes, e.require_passcode, (e.passcode IS NOT NULL), e.expires_at, e.is_template, e.created_at, e.updated_at, u.name, u.email, COALESCE((SELECT json_agg(json_build_object('id', r.id::text, 'name', r.name, 'email', r.email, 'role', r.role::text, 'status', r.status::text, 'signingOrder', r.signing_order) ORDER BY r.signing_order, r.created_at) FROM recipients r WHERE r.envelope_id = e.id), '[]'::json)`
 
 func scan(row pgx.Row) (Envelope, error) {
 	var value Envelope
@@ -43,6 +43,7 @@ func scan(row pgx.Row) (Envelope, error) {
 		&value.AttachCompletedPDF,
 		&value.SessionTimeoutMinutes,
 		&value.RequirePasscode,
+		&value.HasPasscode,
 		&value.ExpiresAt,
 		&value.IsTemplate,
 		&value.CreatedAt,
@@ -81,6 +82,7 @@ func scanDetailed(row pgx.Row) (Envelope, error) {
 		&value.AttachCompletedPDF,
 		&value.SessionTimeoutMinutes,
 		&value.RequirePasscode,
+		&value.HasPasscode,
 		&value.ExpiresAt,
 		&value.IsTemplate,
 		&value.CreatedAt,
@@ -107,9 +109,29 @@ func scanDetailed(row pgx.Row) (Envelope, error) {
 	return value, nil
 }
 
+// Create starts an envelope. Language, timezone and date format the caller leaves empty, and the
+// reminder and notification settings, come from the workspace's saved defaults (see defaults.go).
 func (s *PostgresStore) Create(ctx context.Context, organizationID, userID string, input CreateInput) (Envelope, error) {
-	return scan(s.db.QueryRow(ctx, `INSERT INTO envelopes (organization_id, created_by, title, language, timezone, date_format, expires_at, is_template)
-VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8) RETURNING `+columns, organizationID, userID, input.Title, input.Language, input.Timezone, input.DateFormat, input.ExpiresAt, input.IsTemplate))
+	d, err := s.workspaceDefaults(ctx, organizationID, input.TeamID)
+	if err != nil {
+		return Envelope{}, err
+	}
+	if input.Language == "" {
+		input.Language = d.Language
+	}
+	if input.Timezone == "" {
+		input.Timezone = d.Timezone
+	}
+	if input.DateFormat == "" {
+		input.DateFormat = d.DateFormat
+	}
+	// The team must be in this workspace; anything else falls back to the workspace's default team.
+	return scan(s.db.QueryRow(ctx, `INSERT INTO envelopes (organization_id, created_by, title, language, timezone, date_format, expires_at, is_template,
+  auto_reminders, first_reminder_days, repeat_reminder_days, notify_on_view, notify_on_sign, team_id)
+VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+  COALESCE((SELECT id FROM teams WHERE id::text = $14 AND organization_id = $1::uuid), (SELECT id FROM teams WHERE organization_id = $1::uuid AND is_default)))
+RETURNING `+columns, organizationID, userID, input.Title, input.Language, input.Timezone, input.DateFormat, input.ExpiresAt, input.IsTemplate,
+		d.AutoReminders, d.FirstReminderDays, d.RepeatReminderDays, d.NotifyOnView, d.NotifyOnSign, input.TeamID))
 }
 
 func (s *PostgresStore) List(ctx context.Context, organizationID string, filter ListFilter) ([]Envelope, error) {
@@ -125,7 +147,8 @@ WHERE e.organization_id=$1::uuid
     ($3<>'none' AND e.folder_id=$3::uuid)
   )
   AND e.is_template = COALESCE($4, false)
-ORDER BY e.updated_at DESC, e.id DESC`, organizationID, filter.Status, filter.FolderID, filter.IsTemplate)
+  AND ($5 = '' OR e.team_id::text = $5)
+ORDER BY e.updated_at DESC, e.id DESC`, organizationID, filter.Status, filter.FolderID, filter.IsTemplate, filter.TeamID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +177,7 @@ func (s *PostgresStore) Update(ctx context.Context, organizationID, id string, i
 		allowed_signature_types=COALESCE($7,allowed_signature_types),
 		distribution_method=COALESCE($8,distribution_method),
 		external_id=COALESCE($9,external_id),
-		redirect_url=COALESCE($10,redirect_url),
+		redirect_url=CASE WHEN $23 THEN NULL ELSE COALESCE($10,redirect_url) END,
 		email_subject=COALESCE($11,email_subject),
 		email_body=COALESCE($12,email_body),
 		auto_reminders=COALESCE($13,auto_reminders),
@@ -166,14 +189,15 @@ func (s *PostgresStore) Update(ctx context.Context, organizationID, id string, i
 		session_timeout_minutes=COALESCE($19,session_timeout_minutes),
 		require_passcode=COALESCE($20,require_passcode),
 		passcode=COALESCE($21,passcode),
-		expires_at=COALESCE($22,expires_at),
+		expires_at=CASE WHEN $24 THEN NULL ELSE COALESCE($22,expires_at) END,
 		updated_at=now()
 	WHERE id=$1::uuid AND organization_id=$2::uuid AND status='draft'
 	RETURNING `+columns,
 		id, organizationID, input.Title, input.Language, input.Timezone, input.DateFormat,
 		input.AllowedSignatureTypes, input.DistributionMethod, input.ExternalID, input.RedirectURL, input.EmailSubject, input.EmailBody,
 		input.AutoReminders, input.FirstReminderDays, input.RepeatReminderDays, input.NotifyOnView, input.NotifyOnSign,
-		input.AttachCompletedPDF, input.SessionTimeoutMinutes, input.RequirePasscode, input.Passcode, input.ExpiresAt))
+		input.AttachCompletedPDF, input.SessionTimeoutMinutes, input.RequirePasscode, input.Passcode, input.ExpiresAt,
+		input.ClearRedirectURL, input.ClearExpiresAt))
 	if errors.Is(err, ErrNotFound) {
 		if _, getErr := s.Get(ctx, organizationID, id); getErr != nil {
 			return Envelope{}, getErr
@@ -186,7 +210,8 @@ func (s *PostgresStore) Update(ctx context.Context, organizationID, id string, i
 func (s *PostgresStore) MoveToFolder(ctx context.Context, organizationID, id string, folderID *string) (Envelope, error) {
 	if folderID != nil {
 		var exists bool
-		err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM folders WHERE id=$1::uuid AND organization_id=$2::uuid)`, *folderID, organizationID).Scan(&exists)
+		// The folder must be in the envelope's team.
+		err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM folders f JOIN envelopes e ON e.team_id = f.team_id WHERE f.id=$1::uuid AND f.organization_id=$2::uuid AND e.id=$3::uuid)`, *folderID, organizationID, id).Scan(&exists)
 		if err != nil {
 			return Envelope{}, err
 		}
@@ -283,9 +308,11 @@ func (s *PostgresStore) BulkMoveToFolder(ctx context.Context, organizationID str
 			return 0, ErrNotFound
 		}
 	}
+	// Envelopes only move into a folder of their own team.
 	tag, err := s.db.Exec(ctx, `
 UPDATE envelopes SET folder_id=$3::uuid, updated_at=now()
-WHERE organization_id=$1::uuid AND id=ANY($2::uuid[])`, organizationID, envelopeIDs, folderID)
+WHERE organization_id=$1::uuid AND id=ANY($2::uuid[])
+  AND ($3::uuid IS NULL OR team_id = (SELECT team_id FROM folders WHERE id = $3::uuid))`, organizationID, envelopeIDs, folderID)
 	if err != nil {
 		return 0, err
 	}

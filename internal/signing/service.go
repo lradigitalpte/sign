@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"signing-platform/internal/storage"
 )
 
@@ -22,13 +23,17 @@ var ErrInvalidToken = errors.New("signing token is invalid")
 var ErrUnavailable = errors.New("this signing session is no longer available")
 var ErrNotReady = errors.New("required fields are incomplete")
 var ErrAlreadyFinished = errors.New("this recipient has already finished")
+var ErrPasscodeRequired = errors.New("enter the passcode to open this document")
+var ErrPasscodeIncorrect = errors.New("that passcode is incorrect")
+var ErrPasscodeLocked = errors.New("too many incorrect passcodes; try again in 15 minutes")
 
 type Envelope struct {
 	ID        string     `json:"id"`
 	Title     string     `json:"title"`
 	Status    string     `json:"status"`
-	Language  string     `json:"language"`
-	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	Language    string     `json:"language"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+	RedirectURL *string    `json:"redirectUrl,omitempty"`
 }
 
 type Recipient struct {
@@ -106,6 +111,13 @@ type Session struct {
 	Attachments       []Attachment `json:"attachments"`
 	RemainingRequired int          `json:"remainingRequired"`
 	CanAct            bool         `json:"canAct"`
+	// PasscodeRequired means the sender protected this envelope; Locked means this link has not been unlocked yet.
+	PasscodeRequired bool `json:"passcodeRequired"`
+	Locked           bool `json:"locked"`
+
+	passcodeHash        string
+	passcodeUnlocked    bool
+	passcodeLockedUntil *time.Time
 }
 
 type StoredDocument struct {
@@ -142,6 +154,8 @@ type Store interface {
 	Document(context.Context, string, string) (StoredDocument, error)
 	AttachmentFile(context.Context, string, string) (string, string, string, error)
 	FieldContext(context.Context, string, string) (string, string, string, error)
+	RecordPasscodeFailure(context.Context, string, AuditContext) (*time.Time, error)
+	MarkPasscodeVerified(context.Context, []byte, string, AuditContext) error
 }
 
 type Finalizer interface {
@@ -173,18 +187,87 @@ func (s *Service) WithCompleter(completer Completer) *Service {
 	return s
 }
 
+// Session returns the signing session. While a passcode-protected link is locked, only enough is returned
+// to show the passcode prompt: no documents, fields, attachments or recipient details.
 func (s *Service) Session(ctx context.Context, tokenHash []byte) (Session, error) {
+	session, err := s.resolve(ctx, tokenHash)
+	if err != nil {
+		return Session{}, err
+	}
+	if session.Locked {
+		return lockedView(session), nil
+	}
+	return session, nil
+}
+
+func (s *Service) resolve(ctx context.Context, tokenHash []byte) (Session, error) {
 	session, err := s.store.Resolve(ctx, tokenHash)
 	if err != nil {
 		return Session{}, err
 	}
 	session.RemainingRequired = remainingRequired(session.Fields, session.Recipient.ID)
 	session.CanAct = session.Envelope.Status == "in_progress" && (session.Recipient.Status == "sent" || session.Recipient.Status == "viewed")
+	session.PasscodeRequired = session.passcodeHash != ""
+	session.Locked = session.PasscodeRequired && !session.passcodeUnlocked
 	return session, nil
 }
 
+// unlocked resolves the session for any action that reads or changes the document.
+func (s *Service) unlocked(ctx context.Context, tokenHash []byte) (Session, error) {
+	session, err := s.resolve(ctx, tokenHash)
+	if err != nil {
+		return Session{}, err
+	}
+	if session.Locked {
+		return Session{}, ErrPasscodeRequired
+	}
+	return session, nil
+}
+
+func lockedView(session Session) Session {
+	return Session{
+		OrganizationName:  session.OrganizationName,
+		OrganizationBrand: session.OrganizationBrand,
+		Envelope:          Envelope{ID: session.Envelope.ID, Title: session.Envelope.Title, Status: session.Envelope.Status, Language: session.Envelope.Language},
+		Recipient:         Recipient{Name: session.Recipient.Name},
+		Documents:         []Document{},
+		Fields:            []Field{},
+		Attachments:       []Attachment{},
+		PasscodeRequired:  true,
+		Locked:            true,
+	}
+}
+
+// VerifyPasscode unlocks this signing link. Five wrong attempts lock the recipient out for 15 minutes.
+func (s *Service) VerifyPasscode(ctx context.Context, tokenHash []byte, passcode string, audit AuditContext) (Session, error) {
+	session, err := s.resolve(ctx, tokenHash)
+	if err != nil {
+		return Session{}, err
+	}
+	if !session.Locked {
+		return session, nil
+	}
+	if session.passcodeLockedUntil != nil && session.passcodeLockedUntil.After(time.Now()) {
+		return Session{}, ErrPasscodeLocked
+	}
+	if bcrypt.CompareHashAndPassword([]byte(session.passcodeHash), []byte(strings.TrimSpace(passcode))) != nil {
+		lockedUntil, err := s.store.RecordPasscodeFailure(ctx, session.Recipient.ID, audit)
+		if err != nil {
+			return Session{}, err
+		}
+		if lockedUntil != nil {
+			return Session{}, ErrPasscodeLocked
+		}
+		return Session{}, ErrPasscodeIncorrect
+	}
+	if err := s.store.MarkPasscodeVerified(ctx, tokenHash, session.Recipient.ID, audit); err != nil {
+		return Session{}, err
+	}
+	return s.unlocked(ctx, tokenHash)
+}
+
 func (s *Service) View(ctx context.Context, tokenHash []byte, audit AuditContext) (Session, error) {
-	session, err := s.Session(ctx, tokenHash)
+	session, err := s.unlocked(ctx, tokenHash)
 	if err != nil {
 		return Session{}, err
 	}
@@ -209,7 +292,7 @@ func (s *Service) SaveField(ctx context.Context, tokenHash []byte, fieldID strin
 	if err != nil {
 		return Field{}, Session{}, err
 	}
-	session, err = s.Session(ctx, tokenHash)
+	session, err = s.unlocked(ctx, tokenHash)
 	return field, session, err
 }
 
@@ -222,7 +305,7 @@ func (s *Service) UpdateFieldPlacement(ctx context.Context, tokenHash []byte, fi
 	if err != nil {
 		return Field{}, Session{}, err
 	}
-	session, err = s.Session(ctx, tokenHash)
+	session, err = s.unlocked(ctx, tokenHash)
 	return field, session, err
 }
 
@@ -240,7 +323,7 @@ func (s *Service) CreateField(ctx context.Context, tokenHash []byte, input Field
 	if err != nil {
 		return Field{}, Session{}, err
 	}
-	session, err = s.Session(ctx, tokenHash)
+	session, err = s.unlocked(ctx, tokenHash)
 	return field, session, err
 }
 
@@ -252,7 +335,7 @@ func (s *Service) DeleteField(ctx context.Context, tokenHash []byte, fieldID str
 	if err := s.store.DeleteField(ctx, session.Recipient.ID, fieldID); err != nil {
 		return Session{}, err
 	}
-	return s.Session(ctx, tokenHash)
+	return s.unlocked(ctx, tokenHash)
 }
 
 func (s *Service) Complete(ctx context.Context, tokenHash []byte, audit AuditContext) (Session, error) {
@@ -272,7 +355,7 @@ func (s *Service) Complete(ctx context.Context, tokenHash []byte, audit AuditCon
 			slog.Error("advance signing order", "error", cerr, "envelopeId", envelopeID)
 		}
 	}
-	session, err = s.Session(ctx, tokenHash)
+	session, err = s.unlocked(ctx, tokenHash)
 	if err != nil {
 		return Session{}, err
 	}
@@ -297,7 +380,7 @@ func (s *Service) Decline(ctx context.Context, tokenHash []byte, reason string, 
 }
 
 func (s *Service) Download(ctx context.Context, tokenHash []byte, documentID string) (StoredDocument, io.ReadCloser, error) {
-	session, err := s.Session(ctx, tokenHash)
+	session, err := s.unlocked(ctx, tokenHash)
 	if err != nil {
 		return StoredDocument{}, nil, err
 	}
@@ -319,7 +402,7 @@ func (s *Service) Download(ctx context.Context, tokenHash []byte, documentID str
 }
 
 func (s *Service) DownloadAttachment(ctx context.Context, tokenHash []byte, attachmentID string) (Attachment, string, string, io.ReadCloser, error) {
-	session, err := s.Session(ctx, tokenHash)
+	session, err := s.unlocked(ctx, tokenHash)
 	if err != nil {
 		return Attachment{}, "", "", nil, err
 	}
@@ -420,7 +503,7 @@ func (s *Service) UploadFieldFile(ctx context.Context, tokenHash []byte, fieldID
 		_ = store.Delete(ctx, key)
 		return Field{}, Session{}, err
 	}
-	session, err = s.Session(ctx, tokenHash)
+	session, err = s.unlocked(ctx, tokenHash)
 	return field, session, err
 }
 
@@ -453,7 +536,7 @@ func uploadMimeType(filename string) string {
 }
 
 func (s *Service) requireActive(ctx context.Context, tokenHash []byte) (Session, error) {
-	session, err := s.Session(ctx, tokenHash)
+	session, err := s.unlocked(ctx, tokenHash)
 	if err != nil {
 		return Session{}, err
 	}
