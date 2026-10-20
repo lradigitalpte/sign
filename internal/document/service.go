@@ -12,9 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"signing-platform/internal/pdfutil"
 	"signing-platform/internal/storage"
+
+	"github.com/google/uuid"
 )
 
 const MaxUploadSize int64 = 25 << 20
